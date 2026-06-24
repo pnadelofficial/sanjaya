@@ -1,6 +1,6 @@
 # sanjaya
 
-`sanjaya` (package name: `dynamic-reading-lists`) generates richly annotated reading environments for historical texts — currently Ancient Greek. It calls a locally-hosted LLM to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages where readers can click on any word to reveal its gloss.
+`sanjaya` generates richly annotated reading environments for historical texts — currently Ancient Greek. It calls a locally-hosted LLM to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages where readers can click on any word to reveal its gloss.
 
 ## Requirements
 

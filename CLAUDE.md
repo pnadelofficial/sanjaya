@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-`sanjaya` (package name: `dynamic-reading-lists`) generates richly annotated reading environments for historical texts — currently Ancient Greek. It uses a locally-hosted LLM (LLaMA.cpp-compatible server) to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages.
+`sanjaya` generates richly annotated reading environments for historical texts — currently Ancient Greek. It uses a locally-hosted LLM (LLaMA.cpp-compatible server) to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages.
 
 ## Environment setup
 

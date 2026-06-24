@@ -15,18 +15,28 @@ uv sync          # install dependencies into .venv
 source .venv/bin/activate
 ```
 
+For development, install the package in editable mode to avoid the hard-coded path in `generator.py`:
+
+```bash
+uv pip install -e .
+```
+
 The external dependency `perseus-cts` is installed directly from GitHub:
 ```
 perseus-cts @ git+https://github.com/PerseusDLCode/perseus-cts.git
 ```
 
-## Running the notebook
+## Running the pipeline
+
+`run.py` is the reference entry point. It requires a running LLM server and TEI source data in `test-data/`:
 
 ```bash
-jupyter lab notebooks/testing.ipynb
+python run.py
 ```
 
-The notebook imports from `src/` using an absolute path (`sys.path.insert(0, "/Users/pnadel01/Desktop/dynamic-reading-lists")`). If working on a different machine, update that path or install the package in editable mode.
+Use `chunk_filter` on `Generator` to limit processing to a subset of chunks during development (e.g. `chunk_filter="1.1"` matches chunks whose stem starts with `"1.1"`).
+
+There are currently no automated tests.
 
 ## Architecture
 
@@ -52,7 +62,7 @@ TEI XML files (test-data/)
 
 **`src/site/generator.py`** — `Generator` class orchestrates the full pipeline: parse XML → annotate (with caching to avoid re-calling the LLM) → collate gloss/translation pairs by sentence → render HTML.
 
-**`src/templates/`** — Jinja2 templates. `chunk-page.html.jinja` extends `base.html.jinja` and renders each sentence with inline gloss spans (`data-gloss`, `data-form`) plus translation and collapsible notes.
+**`src/templates/`** — Jinja2 templates. `chunk-page.html.jinja` extends `base.html.jinja` and renders each sentence with inline gloss spans (`data-gloss`, `data-form`) plus translation and collapsible notes. The template branches on annotator `role` strings (`"gloss"`, `"translation"`); unknown roles render as collapsible raw JSON.
 
 ### LLM server
 
@@ -63,7 +73,13 @@ GlossAnnotator(port=8080, language="Ancient Greek", author="Thucydides", work=".
 TranslationAnnotator(port=8080, language="Ancient Greek", author="Thucydides", work="...")
 ```
 
+The `language` parameter is interpolated directly into prompt templates, so use the human-readable name (e.g. `"Ancient Greek"`) rather than a language code.
+
 Annotation results are cached to JSON files; `Generator._create_annotations()` skips files that already exist.
+
+### Annotator role system
+
+Each `Annotator` subclass declares a unique `role` string (e.g. `"gloss"`, `"translation"`). `Generator` validates uniqueness at construction time. The role controls both the cache directory name and which rendering branch `chunk-page.html.jinja` uses.
 
 ### TEI namespace
 
@@ -71,6 +87,6 @@ All XPath queries use the TEI namespace `http://www.tei-c.org/ns/1.0` aliased as
 
 ## Known issues / TODOs
 
-- `src/site/generator.py` line 9 hard-codes an absolute path (`HERE = Path("/Users/pnadel01/Desktop/dynamic-reading-lists")`).
+- `src/site/generator.py` line 9 hard-codes an absolute path (`HERE = Path("/Users/pnadel01/Desktop/dynamic-reading-lists")`). Fix by installing in editable mode (`uv pip install -e .`).
 - `TranslationAnnotator` has a `# @TODO come back for drama` note regarding speaker handling for dramatic texts.
 - `create_annotation_prompt()` in `prompts.py` is a stub (`pass`).

@@ -81,7 +81,7 @@ gen.generate_site()
 
 ### 4. View the output
 
-Open `output/<work>/index.html` in a browser. Each chunk page renders sentences with clickable glossed words; clicking a word reveals its gloss in a popup.
+Open `output/<work>/index.html` in a browser. Each chunk page renders sentences with clickable glossed words; clicking a word reveals its gloss in a popup. As a tip: use the Python utility `python -m http.server` from the `output/<work>` directory, to render the HTML in that directory on `localhost:8000`. 
 
 ## Caching
 

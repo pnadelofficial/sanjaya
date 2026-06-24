@@ -1,0 +1,46 @@
+{% extends "base.html.jinja" %}
+
+{% block content %}
+<div class="container">
+  <header>
+    <h1>{{ work }}</h1>
+    <p class="reference">{{ author }}</p>
+  </header>
+
+  <div class="content">
+    <ul class="toc-list">
+      {% for section in sections %}
+      <li>
+        <a href="{{ section.href }}" class="toc-link">{{ section.label }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+<style>
+  .toc-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .toc-list li {
+    border-bottom: 1px solid #eee;
+  }
+
+  .toc-link {
+    display: block;
+    padding: 10px 8px;
+    color: #333;
+    text-decoration: none;
+    transition: background-color 0.15s;
+  }
+
+  .toc-link:hover {
+    background-color: #fff3e0;
+    color: #8b4513;
+    padding-left: 14px;
+  }
+</style>
+{% endblock %}

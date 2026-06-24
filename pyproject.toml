@@ -1,0 +1,16 @@
+[project]
+name = "dynamic-reading-lists"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "perseus-cts @ git+https://github.com/PerseusDLCode/perseus-cts.git",
+    "json-repair",
+    "jsonschema",
+    "requests",
+    "nltk",
+    "jupyter",
+    "jinja2",
+    "tqdm"
+]

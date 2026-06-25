@@ -37,7 +37,12 @@ Any server exposing a `/v1/chat/completions` endpoint works — LLaMA.cpp, LM St
 Edit `run.py` to point at your source file and LLM endpoint, then run:
 
 ```bash
-python run.py path/to/your/tei.xml
+python run.py --file path/to/your/tei.xml 
+```
+To process only specific chunks, pass their IDs as positional arguments. Each ID is a prefix match, so `1.1` also matches `1.1.1`, `1.1.2`, etc. Omit chunk IDs to process the entire document.
+
+```bash
+python run.py --file path/to/your/tei.xml 1.1 2.1 
 ```
 
 **Local server example** (default in `run.py`):
@@ -61,8 +66,6 @@ GlossAnnotator(
     work="The History of the Peloponnesian War",
 )
 ```
-
-Use `chunk_filter` on `Generator` to process only a subset of chunks while iterating (e.g. `chunk_filter="1.1"`).
 
 ### 3. View the output
 

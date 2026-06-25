@@ -1,6 +1,7 @@
 import unicodedata
 from urllib.parse import quote
 from ..llm import annotators as llm_annotators
+from ..llm.annotations import Annotation
 from .search import build_search_index
 from perseus_cts.models import TEIDocument
 from perseus_cts.chunker import Chunker
@@ -8,7 +9,7 @@ from perseus_cts.chunker import Chunker
 from lxml import etree
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from tqdm import tqdm
 
 
@@ -22,7 +23,7 @@ class Generator:
         work: str,
         author: str,
         output_dir: Path,
-        chunk_filter: Optional[str] = None,
+        chunk_filter: Optional[Union[str, List[str]]] = None,
     ):
         roles = [a.role for a in annotator_list]
         if any(not r for r in roles):
@@ -55,9 +56,10 @@ class Generator:
         return root.findall(self.subunit_xpath, namespaces=self.ns)
 
     def _matches_filter(self, stem: str) -> bool:
-        if self.chunk_filter is None:
+        if not self.chunk_filter:
             return True
-        return stem == self.chunk_filter or stem.startswith(self.chunk_filter + ".")
+        filters = [self.chunk_filter] if isinstance(self.chunk_filter, str) else self.chunk_filter
+        return any(stem == f or stem.startswith(f + ".") for f in filters)
 
     def _get_all(self) -> Dict[Path, List[etree._Element]]:
         xml_files = [p for p in self.chunk_dir.glob("*.xml") if self._matches_filter(p.stem)]
@@ -93,8 +95,13 @@ class Generator:
                 sentence_data = {role: outputs[i].annotation for role, outputs in chunk_annotes.items()}
                 sentence_data["base_text"] = chunk_annotes[first_role][i].text
                 if "gloss" in sentence_data:
+                    normalized = []
                     for t_idx, token in enumerate(sentence_data["gloss"]):
+                        if isinstance(token, Annotation):
+                            token = {"text": token.text, "annotation": token.annotation}
                         token["id"] = f"tk-{chunk_id}-{i}-{t_idx}"
+                        normalized.append(token)
+                    sentence_data["gloss"] = normalized
                 chunk_sentences.append(sentence_data)
             sentences[xml_file] = chunk_sentences
         return sentences

@@ -6,7 +6,8 @@ from src.site.generator import Generator
 from src.llm.annotators import GlossAnnotator, TranslationAnnotator
 
 parser = argparse.ArgumentParser(description="Generate an annotated reading site from a TEI XML file.")
-parser.add_argument("file", help="Path to the TEI XML source file")
+parser.add_argument("--file", help="Path to the TEI XML source file")
+parser.add_argument("chunk", nargs="+", help="Chunk identifier(s) to process")
 args = parser.parse_args()
 
 chunker = DocumentChunker(
@@ -42,6 +43,6 @@ gen = Generator(
     work="History of the Peloponnesian War",
     author="Thucydides",
     output_dir=output_dir,
-    chunk_filter="1.1",
+    chunk_filter=args.chunk,
 )
 gen.generate_site()

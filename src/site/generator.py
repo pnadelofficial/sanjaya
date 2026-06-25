@@ -1,3 +1,5 @@
+import unicodedata
+from urllib.parse import quote
 from ..llm import annotators as llm_annotators
 from .search import build_search_index
 from perseus_cts.models import TEIDocument
@@ -55,8 +57,6 @@ class Generator:
     def _matches_filter(self, stem: str) -> bool:
         if self.chunk_filter is None:
             return True
-        # exact match (e.g. "1.1" matches only 1.1, not 1.10)
-        # or subsection prefix (e.g. "1.1." matches 1.1.1, 1.1.2, ...)
         return stem == self.chunk_filter or stem.startswith(self.chunk_filter + ".")
 
     def _get_all(self) -> Dict[Path, List[etree._Element]]:
@@ -86,20 +86,54 @@ class Generator:
         sentences = {}
         first_role = self.annotator_list[0].role
         for xml_file, chunk_annotes in annotes.items():
+            chunk_id = xml_file.stem
             n = len(chunk_annotes[first_role])
             chunk_sentences = []
             for i in range(n):
                 sentence_data = {role: outputs[i].annotation for role, outputs in chunk_annotes.items()}
                 sentence_data["base_text"] = chunk_annotes[first_role][i].text
+                if "gloss" in sentence_data:
+                    for t_idx, token in enumerate(sentence_data["gloss"]):
+                        token["id"] = f"tk-{chunk_id}-{i}-{t_idx}"
                 chunk_sentences.append(sentence_data)
             sentences[xml_file] = chunk_sentences
         return sentences
+
+    def _collect_vocab(self, sentences: Dict) -> Dict:
+        vocab = {}
+        for xml_file, chunk_sentences in sentences.items():
+            chunk_id = xml_file.stem
+            for sentence in chunk_sentences:
+                if "gloss" not in sentence:
+                    continue
+                context = sentence.get("base_text", "")
+                for token in sentence["gloss"]:
+                    form = token["text"]
+                    if not any(unicodedata.category(c).startswith("L") for c in form):
+                        continue
+                    gloss_val = token["annotation"].get("gloss", "")
+                    token_id = token.get("id", "")
+                    if form not in vocab:
+                        vocab[form] = {"glosses": [], "occurrences": []}
+                    if gloss_val and gloss_val not in vocab[form]["glosses"]:
+                        vocab[form]["glosses"].append(gloss_val)
+                    vocab[form]["occurrences"].append({
+                        "token_id": token_id,
+                        "chunk": chunk_id,
+                        "href": f"../{chunk_id}.html?highlight={quote(form)}#{token_id}",
+                        "context": context,
+                    })
+        return vocab
 
     def write_html(self, sentences: Dict, html_dir: Path) -> None:
         html_dir.mkdir(parents=True, exist_ok=True)
         for xml_file, chunk_sentences in sentences.items():
             title = f"{self.work} - {self.author} - {xml_file.stem}"
-            html = self.chunk_template.render(title=title, sentences=chunk_sentences)
+            html = self.chunk_template.render(
+                title=title,
+                sentences=chunk_sentences,
+                chunk_id=xml_file.stem,
+            )
             out_path = html_dir / f"{xml_file.stem}.html"
             out_path.write_text(html)
             print(f"Wrote {out_path}")
@@ -110,12 +144,40 @@ class Generator:
             key=lambda s: [int(x) for x in s.split(".")],
         )
         sections = [{"label": stem, "href": f"{stem}.html"} for stem in all_stems]
-
         index_template = self.env.get_template("index.html.jinja")
         html = index_template.render(work=self.work, author=self.author, sections=sections)
         out_path = html_dir / "index.html"
         out_path.write_text(html)
         print(f"Wrote {out_path}")
+
+    def write_vocab(self, vocab: Dict, vocab_dir: Path) -> None:
+        vocab_dir.mkdir(parents=True, exist_ok=True)
+        vocab_template = self.env.get_template("vocab-page.html.jinja")
+        for form, data in vocab.items():
+            html = vocab_template.render(
+                title=form,
+                form=form,
+                glosses=data["glosses"],
+                occurrences=data["occurrences"],
+                work=self.work,
+                author=self.author,
+            )
+            out_path = vocab_dir / f"{form}.html"
+            out_path.write_text(html)
+        print(f"Wrote {len(vocab)} vocab pages to {vocab_dir}")
+
+    def write_vocab_index(self, vocab: Dict, vocab_dir: Path) -> None:
+        forms = sorted(vocab.keys())
+        vocab_index_template = self.env.get_template("vocab-index.html.jinja")
+        html = vocab_index_template.render(
+            title=f"Vocabulary — {self.work}",
+            forms=forms,
+            work=self.work,
+            author=self.author,
+        )
+        out_path = vocab_dir / "index.html"
+        out_path.write_text(html)
+        print(f"Wrote vocab index to {out_path}")
 
     def generate_site(self) -> None:
         annotation_dir = self.output_dir / "annotations"
@@ -124,4 +186,8 @@ class Generator:
         sentences = self._create_sentences(annotes)
         self.write_html(sentences, html_dir=html_dir)
         self.write_index(html_dir)
+        vocab = self._collect_vocab(sentences)
+        vocab_dir = html_dir / "vocab"
+        self.write_vocab(vocab, vocab_dir)
+        self.write_vocab_index(vocab, vocab_dir)
         build_search_index(html_dir)

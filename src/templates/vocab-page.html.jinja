@@ -1,0 +1,35 @@
+{% extends "base.html.jinja" %}
+
+{% block content %}
+<div data-pagefind-body>
+
+  <p class="reference">
+    <a href="../index.html">← Home</a>
+    &nbsp;·&nbsp;
+    <a href="index.html">← Vocabulary</a>
+  </p>
+  <h1>{{ form }}</h1>
+
+  {% if glosses %}
+  <section>
+    <h2>Glosses</h2>
+    <ul>
+      {% for gloss in glosses %}
+      <li>{{ gloss }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>Occurrences ({{ occurrences | length }})</h2>
+    {% for occ in occurrences %}
+    <div class="occurrence-block">
+      <p class="reference"><a href="{{ occ.href }}">{{ occ.chunk }}</a></p>
+      <p class="occurrence-context">{{ occ.context }}</p>
+    </div>
+    {% endfor %}
+  </section>
+
+</div>
+{% endblock %}

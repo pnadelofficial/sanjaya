@@ -201,6 +201,11 @@
             content: "▼ ";
         }
 
+        .glossed-token.form-highlight {
+            background-color: #fff176;
+            border-bottom: 2px solid #8b4513;
+        }
+
         #search {
             max-width: 800px;
             margin: 20px auto 0;
@@ -247,6 +252,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
+    const highlightForm = new URLSearchParams(window.location.search).get('highlight');
+    if (highlightForm) {
+        document.querySelectorAll(`.glossed-token[data-form="${CSS.escape(highlightForm)}"]`).forEach(el => {
+            el.classList.add('form-highlight');
+        });
+    }
+
     function createGlossBox(tokenElement) {
         const form = tokenElement.dataset.form;
         const gloss = tokenElement.dataset.gloss;

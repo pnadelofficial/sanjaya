@@ -1,7 +1,7 @@
 {% extends "base.html.jinja" %}
 
 {% block content %}
-<div data-pagefind-body>
+<a href="../index.html">← Home</a>
 <h1>{{ title }}</h1>
 
 {% set known_roles = ['gloss', 'translation', 'base_text'] %}
@@ -12,7 +12,14 @@
   {% if 'gloss' in sentence %}
   <p class="sentence">
     {% for token in sentence.gloss %}
-      <span class="glossed-token" data-gloss="{{ token.annotation.gloss }}" data-form="{{ token.text }}" data-pagefind-index-attrs="data-gloss">{{ token.text }} </span>
+      <span class="glossed-token"
+        id="{{ token.id }}"
+        data-gloss="{{ token.annotation.gloss }}"
+        data-form="{{ token.text }}"
+        data-pagefind-meta="form[data-form], gloss[data-gloss]"
+        data-pagefind-index-attrs="data-gloss,data-form">
+        {{ token.text }}
+      </span>
     {% endfor %}
   </p>
   {% endif %}
@@ -38,5 +45,4 @@
 <br>
 {% endfor %}
 
-</div>
 {% endblock %}

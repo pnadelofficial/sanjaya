@@ -1,0 +1,13 @@
+{% extends "base.html.jinja" %}
+
+{% block content %}
+<h1>Vocabulary</h1>
+<h2>{{ work }}</h2>
+<p class="reference">{{ forms | length }} unique forms</p>
+
+<ul class="vocab-list">
+  {% for form in forms %}
+  <li><a href="{{ form }}.html">{{ form }}</a></li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,6 +1,6 @@
 # sanjaya
 
-`sanjaya` generates richly annotated reading environments for historical texts — currently Ancient Greek. It calls an OpenAI-compatible LLM endpoint to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages where readers can click any word to reveal its gloss. A built-in vocabulary index collects every unique word form across the text, with links back to every sentence in which it appears.
+`sanjaya` ([named for the describer of the Mahabharata war](https://en.wikipedia.org/wiki/Sanjaya)) generates richly annotated reading environments for historical texts. It calls an OpenAI-compatible LLM endpoint to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages where readers can click any word to reveal its gloss. A built-in vocabulary index collects every unique word form across the text, with links back to every sentence in which it appears.
 
 ## Requirements
 

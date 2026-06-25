@@ -16,17 +16,21 @@ chunker = DocumentChunker(
 doc = chunker.chunk()
 
 gloss_annotator = GlossAnnotator(
-    port=8080,
-    language="grc",
+    base_url="http://localhost:8080",
+    language="Ancient Greek",
     author="Thucydides",
     work="The History of the Peloponnesian War",
+    # model="gpt-4o",       # uncomment for hosted APIs
+    # api_key="sk-...",     # omit for local servers
 )
 
 translation_annotator = TranslationAnnotator(
-    port=8080,
-    language="grc",
+    base_url="http://localhost:8080",
+    language="Ancient Greek",
     author="Thucydides",
     work="The History of the Peloponnesian War",
+    # model="gpt-4o",
+    # api_key="sk-...",
 )
 
 output_dir = Path("output/thucydides")

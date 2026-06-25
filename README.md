@@ -1,13 +1,13 @@
 # sanjaya
 
-`sanjaya` generates richly annotated reading environments for historical texts — currently Ancient Greek. It calls a locally-hosted LLM to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages where readers can click on any word to reveal its gloss.
+`sanjaya` generates richly annotated reading environments for historical texts — currently Ancient Greek. It calls an OpenAI-compatible LLM endpoint to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages where readers can click any word to reveal its gloss. A built-in vocabulary index collects every unique word form across the text, with links back to every sentence in which it appears.
 
 ## Requirements
 
 - Python 3.12
 - [uv](https://github.com/astral-uv/uv)
-- A running LLaMA.cpp-compatible LLM server (e.g. [llama.cpp](https://github.com/ggerganov/llama.cpp) with `--server`)
-- TEI XML source files
+- An OpenAI-compatible LLM endpoint (local or hosted — see below)
+- A TEI XML source file
 
 ## Installation
 
@@ -15,77 +15,91 @@
 git clone https://github.com/pnadelofficial/sanjaya.git
 cd sanjaya
 uv sync
-uv pip install -e .   # editable install — keeps imports working without hard-coded paths
+uv pip install -e .
 source .venv/bin/activate
 ```
 
 ## Usage
 
-### 1. Prepare source data
+### 1. Start an LLM endpoint
 
-Place your TEI XML files in `test-data/`. The pipeline uses `perseus_cts.Corpus` to discover and chunk documents automatically.
-
-### 2. Start the LLM server
-
-Start a LLaMA.cpp-compatible server on a local port (default `8080`):
-
+**Local server** (e.g. [llama.cpp](https://github.com/ggerganov/llama.cpp)):
 ```bash
 llama-server --model your-model.gguf --port 8080
 ```
 
-Any server that exposes a `/v1/chat/completions` endpoint works.
+Any server exposing a `/v1/chat/completions` endpoint works — LLaMA.cpp, LM Studio, and Ollama all qualify.
 
-### 3. Run the pipeline
+**Hosted API** (OpenAI, or any OpenAI-compatible provider): no server to start; supply your `api_key` and `model` in the annotator config instead.
 
-Edit `run.py` to point at your corpus, then run:
+### 2. Configure and run the pipeline
+
+Edit `run.py` to point at your source file and LLM endpoint, then run:
 
 ```bash
-python run.py
+python run.py path/to/your/tei.xml
 ```
 
-`run.py` shows the full wiring: create annotators, load a corpus document, configure a `Generator`, and call `generate_site()`. Use `chunk_filter` on `Generator` to process only a subset of chunks while iterating (e.g. `chunk_filter="1.1"`).
-
+**Local server example** (default in `run.py`):
 ```python
-from perseus_cts.models import Corpus
-from src.site.generator import Generator
-from src.llm.annotators import GlossAnnotator, TranslationAnnotator
-from pathlib import Path
-
-gloss_annotator = GlossAnnotator(
-    port=8080,
+GlossAnnotator(
+    base_url="http://localhost:8080",
     language="Ancient Greek",
     author="Thucydides",
     work="The History of the Peloponnesian War",
 )
-translation_annotator = TranslationAnnotator(
-    port=8080,
-    language="Ancient Greek",
-    author="Thucydides",
-    work="The History of the Peloponnesian War",
-)
-
-corpus = Corpus("test-data")
-doc = next(corpus.documents())
-
-gen = Generator(
-    document=doc,
-    template_dir=Path("src/templates"),
-    subunit_xpath=".//tei:p",
-    annotator_list=[gloss_annotator, translation_annotator],
-    work="History of the Peloponnesian War",
-    author="Thucydides",
-    output_dir=Path("output/thucydides"),
-)
-gen.generate_site()
 ```
 
-### 4. View the output
+**Hosted API example**:
+```python
+GlossAnnotator(
+    base_url="https://api.openai.com",
+    model="gpt-4o",
+    api_key="sk-...",
+    language="Ancient Greek",
+    author="Thucydides",
+    work="The History of the Peloponnesian War",
+)
+```
 
-Open `output/<work>/index.html` in a browser. Each chunk page renders sentences with clickable glossed words; clicking a word reveals its gloss in a popup. As a tip: use the Python utility `python -m http.server` from the `output/<work>` directory, to render the HTML in that directory on `localhost:8000`. 
+Use `chunk_filter` on `Generator` to process only a subset of chunks while iterating (e.g. `chunk_filter="1.1"`).
+
+### 3. View the output
+
+Serve the output directory and open it in a browser:
+
+```bash
+cd output/thucydides/html
+python -m http.server
+```
+
+Then open `http://localhost:8000` in your browser.
+
+## Output structure
+
+```
+output/<work>/html/
+  index.html          ← chunk table of contents
+  1.1.html            ← chunk pages with clickable glosses
+  vocab/
+    index.html        ← alphabetical vocabulary list
+    <form>.html       ← one page per unique word form
+  _pagefind/          ← search index (built automatically)
+```
+
+## Features
+
+**Clickable glosses** — click any word in a chunk page to reveal its gloss in a popup. Click again to close.
+
+**Vocabulary index** — every unique word form gets its own page listing all collected glosses and every sentence in which it appears, with links back to the source chunk. Each token has a stable ID of the form `tk-[chunk]-[sentence]-[word]`.
+
+**Highlight on navigation** — clicking an occurrence link from a vocab page highlights all instances of that word form on the destination chunk page.
+
+**Full-text search** — the vocabulary pages are indexed by [pagefind](https://pagefind.app) at build time. The search box at the top of every page covers both Greek word forms and their English glosses.
 
 ## Caching
 
-Annotation results are cached as JSON files under the output directory. Re-running the pipeline skips any chunk that has already been annotated, so you only pay LLM costs once per chunk.
+Annotation results are cached as JSON files under `output/<work>/annotations/`. Re-running the pipeline skips any chunk that has already been annotated, so you only pay LLM costs once per chunk.
 
 ## Extending
 

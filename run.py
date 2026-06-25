@@ -7,7 +7,7 @@ from src.llm.annotators import GlossAnnotator, TranslationAnnotator
 
 parser = argparse.ArgumentParser(description="Generate an annotated reading site from a TEI XML file.")
 parser.add_argument("--file", help="Path to the TEI XML source file")
-parser.add_argument("chunk", nargs="+", help="Chunk identifier(s) to process")
+parser.add_argument("chunk", nargs="*", help="Chunk identifier(s) to process")
 args = parser.parse_args()
 
 chunker = DocumentChunker(

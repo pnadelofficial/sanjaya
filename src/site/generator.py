@@ -1,4 +1,5 @@
 from ..llm import annotators as llm_annotators
+from .search import build_search_index
 from perseus_cts.models import TEIDocument
 from perseus_cts.chunker import Chunker
 
@@ -123,3 +124,4 @@ class Generator:
         sentences = self._create_sentences(annotes)
         self.write_html(sentences, html_dir=html_dir)
         self.write_index(html_dir)
+        build_search_index(html_dir)

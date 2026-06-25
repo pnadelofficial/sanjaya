@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>{{ title }}</title>
+    <link href="/_pagefind/pagefind-ui.css" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -199,9 +200,20 @@
         details.note[open] summary::before {
             content: "▼ ";
         }
+
+        #search {
+            max-width: 800px;
+            margin: 20px auto 0;
+        }
+
+        .pagefind-ui__search-input {
+            font-family: inherit;
+        }
     </style>
 </head>
 <body>
+
+  <div id="search" data-pagefind-ignore></div>
 
   {% block content %}{% endblock %}
 
@@ -251,6 +263,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
 });
+</script>
+
+<script src="/_pagefind/pagefind-ui.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    new PagefindUI({ element: '#search', showSubResults: true });
+  });
 </script>
 </body>
 </html>

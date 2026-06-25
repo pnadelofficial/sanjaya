@@ -220,3 +220,6 @@ __marimo__/
 notebooks/
 test-data/
 output/
+data/
+chunks/
+_pagefind/

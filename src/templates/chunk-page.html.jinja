@@ -22,6 +22,9 @@
       </span>
     {% endfor %}
   </p>
+  {% elif sentence.gloss_failed %}
+  <p class="sentence">{{ sentence.base_text }}</p>
+  <p class="annotation-error">Gloss annotations unavailable for this passage.</p>
   {% endif %}
 
   {% if 'translation' in sentence %}
@@ -30,10 +33,12 @@
     <summary>See notes</summary>
     <span>{{ sentence.translation.annotation.notes }}</span>
   </details>
+  {% elif sentence.translation_failed %}
+  <p class="annotation-error">Translation unavailable for this passage.</p>
   {% endif %}
 
   {% for key, value in sentence.items() %}
-    {% if key not in known_roles %}
+    {% if key not in known_roles and not key.endswith('_failed') %}
     <details class="note">
       <summary>{{ key }}</summary>
       <pre class="annotation-raw">{{ value | tojson(indent=2) }}</pre>

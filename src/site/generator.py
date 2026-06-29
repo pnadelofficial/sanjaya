@@ -94,11 +94,19 @@ class Generator:
             for i in range(n):
                 sentence_data = {role: outputs[i].annotation for role, outputs in chunk_annotes.items()}
                 sentence_data["base_text"] = chunk_annotes[first_role][i].text
+                # Replace None annotations (failed LLM calls) with a failure flag so
+                # the template can render a fallback rather than crashing.
+                for role in [a.role for a in self.annotator_list]:
+                    if sentence_data.get(role) is None:
+                        del sentence_data[role]
+                        sentence_data[f"{role}_failed"] = True
                 if "gloss" in sentence_data:
                     normalized = []
                     for t_idx, token in enumerate(sentence_data["gloss"]):
                         if isinstance(token, Annotation):
                             token = {"text": token.text, "annotation": token.annotation}
+                        if not token.get("annotation"):
+                            continue
                         token["id"] = f"tk-{chunk_id}-{i}-{t_idx}"
                         normalized.append(token)
                     sentence_data["gloss"] = normalized

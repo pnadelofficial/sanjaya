@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>{{ title }}</title>
-    <link href="/_pagefind/pagefind-ui.css" rel="stylesheet">
+    <link href="{{ depth_prefix }}_pagefind/pagefind-ui.css" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -283,7 +283,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<script src="/_pagefind/pagefind-ui.js"></script>
+<script src="{{ depth_prefix }}_pagefind/pagefind-ui.js"></script>
 <script>
   window.addEventListener('DOMContentLoaded', () => {
     new PagefindUI({ element: '#search', showSubResults: true });

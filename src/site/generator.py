@@ -148,6 +148,7 @@ class Generator:
                 title=title,
                 sentences=chunk_sentences,
                 chunk_id=xml_file.stem,
+                depth_prefix="",
             )
             out_path = html_dir / f"{xml_file.stem}.html"
             out_path.write_text(html)
@@ -160,7 +161,7 @@ class Generator:
         )
         sections = [{"label": stem, "href": f"{stem}.html"} for stem in all_stems]
         index_template = self.env.get_template("index.html.jinja")
-        html = index_template.render(work=self.work, author=self.author, sections=sections)
+        html = index_template.render(work=self.work, author=self.author, sections=sections, depth_prefix="")
         out_path = html_dir / "index.html"
         out_path.write_text(html)
         print(f"Wrote {out_path}")
@@ -176,6 +177,7 @@ class Generator:
                 occurrences=data["occurrences"],
                 work=self.work,
                 author=self.author,
+                depth_prefix="../",
             )
             out_path = vocab_dir / f"{form}.html"
             out_path.write_text(html)
@@ -189,6 +191,7 @@ class Generator:
             forms=forms,
             work=self.work,
             author=self.author,
+            depth_prefix="../",
         )
         out_path = vocab_dir / "index.html"
         out_path.write_text(html)

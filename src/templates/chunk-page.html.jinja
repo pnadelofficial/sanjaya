@@ -1,7 +1,7 @@
 {% extends "base.html.jinja" %}
 
 {% block content %}
-<a href="../index.html">← Home</a>
+<a href="{{ depth_prefix }}index.html">← Home</a>
 <h1>{{ title }}</h1>
 
 {% set known_roles = ['gloss', 'translation', 'base_text'] %}

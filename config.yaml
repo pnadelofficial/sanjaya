@@ -1,0 +1,39 @@
+# sanjaya configuration
+# Run with: sanjaya --config config.yaml
+# Process a subset:  sanjaya --config config.yaml --chunk 1.1 1.2
+
+work:
+  title: "History of the Peloponnesian War"
+  author: "Thucydides"
+
+source:
+  file: "data/thucydides.xml"    # path to TEI XML source, relative to this file
+  xpath: ".//tei:p"              # XPath selecting the text subunits to annotate
+
+output:
+  dir: "output/thucydides"       # relative to this file
+
+# chunk_filter: "1.1"            # optional: string or list of chunk IDs to process
+#   e.g. chunk_filter: ["1.1", "1.2"]
+
+# templates:
+#   dir: "src/sanjaya/templates" # optional: defaults to the bundled templates
+
+annotators:
+  - class: sanjaya.llm.annotators.GlossAnnotator
+    args:
+      base_url: "http://localhost:8080"
+      language: "Ancient Greek"
+      author: "Thucydides"
+      work: "History of the Peloponnesian War"
+      # model: "gpt-4o"          # uncomment for hosted APIs
+      # api_key: "sk-..."        # omit for local servers
+
+  - class: sanjaya.llm.annotators.TranslationAnnotator
+    args:
+      base_url: "http://localhost:8080"
+      language: "Ancient Greek"
+      author: "Thucydides"
+      work: "History of the Peloponnesian War"
+      # model: "gpt-4o"
+      # api_key: "sk-..."

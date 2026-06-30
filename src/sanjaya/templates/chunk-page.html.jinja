@@ -1,0 +1,48 @@
+{% extends "base.html.jinja" %}
+
+{% block content %}
+<a href="{{ depth_prefix }}index.html">← Home</a>
+<h1>{{ title }}</h1>
+
+{% for sentence in sentences %}
+<div class="sentence-block">
+
+  {% for role in word_roles %}
+    {% if role in sentence %}
+    <p class="sentence">
+      {% for token in sentence[role] %}
+        <span class="glossed-token"
+          id="{{ token.id }}"
+          data-label="{{ token.annotation.label }}"
+          data-form="{{ token.text }}">
+          {{ token.text }}
+        </span>
+      {% endfor %}
+    </p>
+    {% elif (role ~ '_failed') in sentence %}
+    <p class="sentence">{{ sentence.base_text }}</p>
+    <p class="annotation-error">{{ role | title }} annotations unavailable for this passage.</p>
+    {% endif %}
+  {% endfor %}
+
+  {% for role in sentence_roles %}
+    {% if role in sentence %}
+    <p><i>{{ role | title }}</i>: {{ sentence[role].summary }}</p>
+    <details class="note">
+      <summary>See notes</summary>
+      {% for key, value in sentence[role].items() %}
+        {% if key != 'summary' %}
+        <p>{{ value }}</p>
+        {% endif %}
+      {% endfor %}
+    </details>
+    {% elif (role ~ '_failed') in sentence %}
+    <p class="annotation-error">{{ role | title }} unavailable for this passage.</p>
+    {% endif %}
+  {% endfor %}
+
+</div>
+<br>
+{% endfor %}
+
+{% endblock %}

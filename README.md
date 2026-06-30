@@ -1,13 +1,13 @@
 # sanjaya
 
-`sanjaya` ([named for the describer of the Mahabharata war](https://en.wikipedia.org/wiki/Sanjaya)) generates richly annotated reading environments for historical texts. It calls an OpenAI-compatible LLM endpoint to produce word-level glosses and sentence-level translations, then renders them into interactive HTML pages where readers can click any word to reveal its gloss. A built-in vocabulary index collects every unique word form across the text, with links back to every sentence in which it appears.
+`sanjaya` ([named for the describer of the Mahabharata war](https://en.wikipedia.org/wiki/Sanjaya)) generates richly annotated reading environments for historical texts. It produces word-level and sentence-level annotations — via an LLM, a classical NLP pipeline, or any custom backend — and renders them into interactive HTML pages where readers can click any word to reveal its gloss. A vocabulary index collects every unique word form across the text, with links back to every sentence in which it appears.
 
 ## Requirements
 
 - Python 3.12
 - [uv](https://github.com/astral-uv/uv)
-- An OpenAI-compatible LLM endpoint (local or hosted — see below)
 - A TEI XML source file
+- An annotation backend (LLM endpoint, spaCy model, etc.) — see below
 
 ## Installation
 
@@ -21,7 +21,41 @@ source .venv/bin/activate
 
 ## Usage
 
-### 1. Start an LLM endpoint
+### 1. Write a config file
+
+Copy `config.yaml` and edit it for your text and annotators:
+
+```yaml
+work:
+  title: "History of the Peloponnesian War"
+  author: "Thucydides"
+
+source:
+  file: "data/thucydides.xml"   # path to TEI XML, relative to this file
+  xpath: ".//tei:p"             # XPath selecting the subunits to annotate
+
+output:
+  dir: "output/thucydides"
+
+annotators:
+  - class: sanjaya.llm.annotators.GlossAnnotator
+    args:
+      base_url: "http://localhost:8080"
+      language: "Ancient Greek"
+      author: "Thucydides"
+      work: "History of the Peloponnesian War"
+
+  - class: sanjaya.llm.annotators.TranslationAnnotator
+    args:
+      base_url: "http://localhost:8080"
+      language: "Ancient Greek"
+      author: "Thucydides"
+      work: "History of the Peloponnesian War"
+```
+
+The `class` field accepts any dotted Python path, so you can point at your own annotators without modifying sanjaya itself.
+
+### 2. Start your annotation backend (if using an LLM)
 
 **Local server** (e.g. [llama.cpp](https://github.com/ggerganov/llama.cpp)):
 ```bash
@@ -30,80 +64,80 @@ llama-server --model your-model.gguf --port 8080
 
 Any server exposing a `/v1/chat/completions` endpoint works — LLaMA.cpp, LM Studio, and Ollama all qualify.
 
-**Hosted API** (OpenAI, or any OpenAI-compatible provider): no server to start; supply your `api_key` and `model` in the annotator config instead.
+**Hosted API** (OpenAI or any compatible provider): no server to start. Supply `model` and `api_key` under `args` in the config instead of `base_url`.
 
-### 2. Configure and run the pipeline
-
-Edit `run.py` to point at your source file and LLM endpoint, then run:
+### 3. Run
 
 ```bash
-python run.py --file path/to/your/tei.xml 
+sanjaya --config config.yaml
 ```
-To process only specific chunks, pass their IDs as positional arguments. Each ID is a prefix match, so `1.1` also matches `1.1.1`, `1.1.2`, etc. Omit chunk IDs to process the entire document.
 
+To process only specific chunks:
 ```bash
-python run.py --file path/to/your/tei.xml 1.1 2.1 
+sanjaya --config config.yaml --chunk 1.1 2.1
 ```
 
-**Local server example** (default in `run.py`):
-```python
-GlossAnnotator(
-    base_url="http://localhost:8080",
-    language="Ancient Greek",
-    author="Thucydides",
-    work="The History of the Peloponnesian War",
-)
-```
+Each chunk ID is a prefix match, so `1.1` also processes `1.1.1`, `1.1.2`, etc. `--chunk` overrides `chunk_filter` in the config file.
 
-**Hosted API example**:
-```python
-GlossAnnotator(
-    base_url="https://api.openai.com",
-    model="gpt-4o",
-    api_key="sk-...",
-    language="Ancient Greek",
-    author="Thucydides",
-    work="The History of the Peloponnesian War",
-)
-```
-
-### 3. View the output
-
-Serve the output directory and open it in a browser:
+### 4. View the output
 
 ```bash
 cd output/thucydides/html
 python -m http.server
 ```
 
-Then open `http://localhost:8000` in your browser.
+Then open `http://localhost:8000`.
 
 ## Output structure
 
 ```
 output/<work>/html/
-  index.html          ← chunk table of contents
-  1.1.html            ← chunk pages with clickable glosses
+  index.html        ← chunk table of contents
+  1.1.html          ← chunk pages with clickable glosses
   vocab/
-    index.html        ← alphabetical vocabulary list
-    <form>.html       ← one page per unique word form
-  _pagefind/          ← search index (built automatically)
+    index.html      ← alphabetical vocabulary list
+    <form>.html     ← one page per unique word form
 ```
 
 ## Features
 
-**Clickable glosses** — click any word in a chunk page to reveal its gloss in a popup. Click again to close.
+**Clickable glosses** — click any word in a chunk page to reveal its gloss in a popup.
 
 **Vocabulary index** — every unique word form gets its own page listing all collected glosses and every sentence in which it appears, with links back to the source chunk. Each token has a stable ID of the form `tk-[chunk]-[sentence]-[word]`.
 
 **Highlight on navigation** — clicking an occurrence link from a vocab page highlights all instances of that word form on the destination chunk page.
 
-**Full-text search** — the vocabulary pages are indexed by [pagefind](https://pagefind.app) at build time. The search box at the top of every page covers both Greek word forms and their English glosses.
-
 ## Caching
 
-Annotation results are cached as JSON files under `output/<work>/annotations/`. Re-running the pipeline skips any chunk that has already been annotated, so you only pay LLM costs once per chunk.
+Annotation results are cached as JSON files under `output/<work>/annotations/`. Re-running the pipeline skips any chunk that has already been annotated.
 
 ## Extending
 
-To add a new annotation type, subclass `Annotator` in `src/llm/annotations.py`, set a unique `role` string, and implement `annotate()`. Pass the new annotator to `Generator` alongside the existing ones. The Jinja template (`src/templates/chunk-page.html.jinja`) will render unknown roles as collapsible raw JSON until you add a dedicated template branch.
+### Custom annotators
+
+Sanjaya has two annotator base classes:
+
+- **`WordAnnotator`** — processes a sentence and returns one `Annotation` per token. The annotation dict must include a `"label"` key (the gloss displayed in the UI). Override `tokenize()` for language-specific tokenisation.
+- **`SentenceAnnotator`** — processes a sentence and returns a single `Annotation` (or `None` on failure). The annotation dict must include a `"summary"` key (the main text displayed in the UI).
+
+Implement either base class in your own module, then reference it by dotted path in the config:
+
+```python
+# myproject/annotators.py
+from sanjaya.llm.annotations import WordAnnotator, Annotation
+
+class POSAnnotator(WordAnnotator):
+    role = "pos"
+
+    def annotate(self, sentence: str) -> list[Annotation]:
+        tokens = self.tokenize(sentence)
+        return [Annotation(text=t, annotation={"label": tag_token(t)}) for t in tokens]
+```
+
+```yaml
+annotators:
+  - class: myproject.annotators.POSAnnotator
+    args: {}
+```
+
+All extra fields in the annotation dict beyond `label` / `summary` are rendered in a collapsible block on the chunk page.

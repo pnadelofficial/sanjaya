@@ -1,20 +1,13 @@
-import argparse
+# run.py — direct Python API usage example.
+# For normal use, prefer the CLI:  sanjaya --config config.yaml
+
 from pathlib import Path
+from perseus_cts.models import TEIDocument
 
-from src.site.chunker import DocumentChunker
-from src.site.generator import Generator
-from src.llm.annotators import GlossAnnotator, TranslationAnnotator
+from sanjaya.site.generator import Generator
+from sanjaya.llm.annotators import GlossAnnotator, TranslationAnnotator
 
-parser = argparse.ArgumentParser(description="Generate an annotated reading site from a TEI XML file.")
-parser.add_argument("--file", help="Path to the TEI XML source file")
-parser.add_argument("chunk", nargs="*", help="Chunk identifier(s) to process")
-args = parser.parse_args()
-
-chunker = DocumentChunker(
-    xml_path=args.file,
-    chunk_dir=Path("chunks"),
-)
-doc = chunker.chunk()
+doc = TEIDocument("data/thucydides.xml")
 
 gloss_annotator = GlossAnnotator(
     base_url="http://localhost:8080",
@@ -34,15 +27,14 @@ translation_annotator = TranslationAnnotator(
     # api_key="sk-...",
 )
 
-output_dir = Path("output/thucydides")
 gen = Generator(
     document=doc,
-    template_dir=Path("src/templates"),
+    template_dir=Path("src/sanjaya/templates"),
     subunit_xpath=".//tei:p",
     annotator_list=[gloss_annotator, translation_annotator],
     work="History of the Peloponnesian War",
     author="Thucydides",
-    output_dir=output_dir,
-    chunk_filter=args.chunk,
+    output_dir=Path("output/thucydides"),
+    chunk_filter=None,
 )
 gen.generate_site()

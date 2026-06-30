@@ -1,8 +1,6 @@
 import unicodedata
 from urllib.parse import quote
-from ..llm import annotators as llm_annotators
-from ..llm.annotations import Annotation
-from .search import build_search_index
+from ..llm.annotations import WordAnnotator, SentenceAnnotator, Annotation
 from perseus_cts.models import TEIDocument
 from perseus_cts.chunker import Chunker
 
@@ -19,7 +17,7 @@ class Generator:
         document: TEIDocument,
         template_dir: Path,
         subunit_xpath: str,
-        annotator_list: List[llm_annotators.Annotator],
+        annotator_list: List[Union[WordAnnotator, SentenceAnnotator]],
         work: str,
         author: str,
         output_dir: Path,
@@ -34,6 +32,8 @@ class Generator:
         self.template_dir = Path(template_dir)
         self.subunit_xpath = subunit_xpath
         self.annotator_list = annotator_list
+        self.word_annotators = [a for a in annotator_list if isinstance(a, WordAnnotator)]
+        self.sentence_annotators = [a for a in annotator_list if isinstance(a, SentenceAnnotator)]
         self.work = work
         self.author = author
         self.output_dir = Path(output_dir)
@@ -100,38 +100,42 @@ class Generator:
                     if sentence_data.get(role) is None:
                         del sentence_data[role]
                         sentence_data[f"{role}_failed"] = True
-                if "gloss" in sentence_data:
+                for annotator in self.word_annotators:
+                    role = annotator.role
+                    if role not in sentence_data:
+                        continue
                     normalized = []
-                    for t_idx, token in enumerate(sentence_data["gloss"]):
-                        if isinstance(token, Annotation):
-                            token = {"text": token.text, "annotation": token.annotation}
+                    for t_idx, token in enumerate(sentence_data[role]):
                         if not token.get("annotation"):
                             continue
                         token["id"] = f"tk-{chunk_id}-{i}-{t_idx}"
                         normalized.append(token)
-                    sentence_data["gloss"] = normalized
+                    sentence_data[role] = normalized
                 chunk_sentences.append(sentence_data)
             sentences[xml_file] = chunk_sentences
         return sentences
 
     def _collect_vocab(self, sentences: Dict) -> Dict:
+        if not self.word_annotators:
+            return {}
+        word_role = self.word_annotators[0].role
         vocab = {}
         for xml_file, chunk_sentences in sentences.items():
             chunk_id = xml_file.stem
             for sentence in chunk_sentences:
-                if "gloss" not in sentence:
+                if word_role not in sentence:
                     continue
                 context = sentence.get("base_text", "")
-                for token in sentence["gloss"]:
+                for token in sentence[word_role]:
                     form = token["text"]
                     if not any(unicodedata.category(c).startswith("L") for c in form):
                         continue
-                    gloss_val = token["annotation"].get("gloss", "")
+                    label_val = token["annotation"].get("label", "")
                     token_id = token.get("id", "")
                     if form not in vocab:
                         vocab[form] = {"glosses": [], "occurrences": []}
-                    if gloss_val and gloss_val not in vocab[form]["glosses"]:
-                        vocab[form]["glosses"].append(gloss_val)
+                    if label_val and label_val not in vocab[form]["glosses"]:
+                        vocab[form]["glosses"].append(label_val)
                     vocab[form]["occurrences"].append({
                         "token_id": token_id,
                         "chunk": chunk_id,
@@ -142,6 +146,8 @@ class Generator:
 
     def write_html(self, sentences: Dict, html_dir: Path) -> None:
         html_dir.mkdir(parents=True, exist_ok=True)
+        word_roles = [a.role for a in self.word_annotators]
+        sentence_roles = [a.role for a in self.sentence_annotators]
         for xml_file, chunk_sentences in sentences.items():
             title = f"{self.work} - {self.author} - {xml_file.stem}"
             html = self.chunk_template.render(
@@ -149,6 +155,8 @@ class Generator:
                 sentences=chunk_sentences,
                 chunk_id=xml_file.stem,
                 depth_prefix="",
+                word_roles=word_roles,
+                sentence_roles=sentence_roles,
             )
             out_path = html_dir / f"{xml_file.stem}.html"
             out_path.write_text(html)
@@ -208,4 +216,3 @@ class Generator:
         vocab_dir = html_dir / "vocab"
         self.write_vocab(vocab, vocab_dir)
         self.write_vocab_index(vocab, vocab_dir)
-        build_search_index(html_dir)

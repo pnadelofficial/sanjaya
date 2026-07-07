@@ -13,10 +13,14 @@ class GlossAnnotator(WordAnnotator):
     includes all fields returned by the LLM plus a canonical "label" key
     (mapped from the LLM's "gloss" field) required by WordAnnotator.
 
+    output_schema = None: each token's annotation is a plain gloss string.
+    No additional metadata fields are declared or validated beyond "label".
+
     Uses NLTK word_tokenize by default; override tokenize() for different
     language-specific tokenisation.
     """
     role = "gloss"
+    output_schema = None
 
     def __init__(
         self,
@@ -66,8 +70,12 @@ class TranslationAnnotator(SentenceAnnotator):
     Returns an Annotation whose dict includes all fields returned by the LLM
     plus a canonical "summary" key (mapped from the LLM's "translation" field)
     required by SentenceAnnotator.
+
+    output_schema = None: the sentence annotation is a plain translation string.
+    No additional metadata fields are declared or validated beyond "summary".
     """
     role = "translation"
+    output_schema = None
 
     def __init__(
         self,

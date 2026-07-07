@@ -14,7 +14,8 @@
         <span class="glossed-token"
           id="{{ token.id }}"
           data-label="{{ token.annotation.label }}"
-          data-form="{{ token.text }}">
+          data-form="{{ token.text }}"
+          data-annotation='{{ token.annotation | tojson }}'>
           {{ token.text }}
         </span>
       {% endfor %}

@@ -1,6 +1,19 @@
+import copy
 import unicodedata
 from urllib.parse import quote
 from ..llm.annotations import WordAnnotator, SentenceAnnotator, Annotation
+
+
+def _stem_sort_key(stem: str) -> list:
+    """Sort key for chunk stems: numeric parts sort as ints, non-numeric as strings after."""
+    result = []
+    for part in stem.split("."):
+        try:
+            result.append((0, int(part)))
+        except ValueError:
+            result.append((1, part))
+    return result
+from .db import AnnotationDB, normalize_form
 from perseus_cts.models import TEIDocument
 from perseus_cts.chunker import Chunker
 
@@ -8,7 +21,10 @@ from lxml import etree
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from typing import List, Dict, Optional, Union
-from tqdm import tqdm
+from rich.progress import Progress, BarColumn, MofNCompleteColumn, TextColumn, TimeElapsedColumn
+from rich.console import Console
+
+console = Console()
 
 
 class Generator:
@@ -42,14 +58,52 @@ class Generator:
         self.chunk_filter = chunk_filter
         self.chunk_dir = self.output_dir / "chunks"
         Chunker(document).compile(self.chunk_dir)
+        if not any(self.chunk_dir.glob("*.xml")):
+            print("Warning: CTS chunker produced 0 chunks — falling back to body-div chunking.")
+            self._compile_fallback_chunks(document, self.chunk_dir)
 
         self.env = Environment(
             loader=FileSystemLoader(self.template_dir),
-            autoescape=select_autoescape()
+            # Templates are named *.jinja, which select_autoescape() with default
+            # settings would leave unescaped; force autoescaping on so untrusted
+            # annotator output (glosses, translations) can't break attributes or
+            # inject markup. No template renders trusted HTML through a variable.
+            autoescape=select_autoescape(default=True, default_for_string=True),
         )
         self.chunk_template = self.env.get_template("chunk-page.html.jinja")
         self.all_raw_pages = self._get_all()
 
+    def _compile_fallback_chunks(self, document: TEIDocument, chunk_dir: Path) -> None:
+        """Write one chunk file per direct div child of tei:body when the CTS chunker fails."""
+        TEI_NS = "http://www.tei-c.org/ns/1.0"
+        ns = {"tei": TEI_NS}
+        root = document.root
+        body = root.find(".//tei:body", ns)
+        if body is None:
+            raise RuntimeError("Cannot find tei:body in source document for fallback chunking.")
+        divs = [el for el in body if etree.QName(el.tag).localname == "div"]
+        if not divs:
+            raise RuntimeError("Fallback chunker: no div children found under tei:body.")
+        for idx, div in enumerate(divs):
+            n = div.get("n") or str(idx + 1)
+            unit = div.get("type", "div")
+            chunk_el = etree.Element("citationChunk")
+            chunk_el.set("unit", unit)
+            chunk_el.set("n", n)
+            elements_el = etree.SubElement(chunk_el, "elements")
+            # deepcopy: appending the live node would reparent it out of the
+            # source document's <body>, emptying the in-memory tree.
+            elements_el.append(copy.deepcopy(div))
+            chunk_dir.mkdir(parents=True, exist_ok=True)
+            (chunk_dir / f"{n}.xml").write_bytes(
+                etree.tostring(chunk_el, encoding="utf-8", xml_declaration=True, pretty_print=True)
+            )
+        print(f"Fallback chunker: wrote {len(divs)} chunk(s) to {chunk_dir}")
+
+    # @TODO: fallback chunk files root at <citationChunk>, not a TEI element; XPath
+    # patterns that require a specific ancestor (e.g. .//tei:body//tei:p) silently
+    # return 0 elements per fallback chunk. A shared chunking abstraction that
+    # normalises the XML root would remove this constraint.
     def _get_one(self, xml_path: Path) -> List[etree._Element]:
         tree = etree.parse(str(xml_path))
         root = tree.getroot()
@@ -69,19 +123,47 @@ class Generator:
         annotation_dir.mkdir(parents=True, exist_ok=True)
         annotes = {}
         chunks = list(self.all_raw_pages.items())
-        for xml_file, subunits in tqdm(chunks, desc="Chunks", unit="chunk"):
-            texts = [s.text for s in subunits]
-            chunk_annotes = {}
-            for annotator in self.annotator_list:
-                cache_file = annotation_dir / f"{xml_file.stem}_{annotator.role}.json"
-                if cache_file.exists():
-                    tqdm.write(f"  [{xml_file.stem}] {annotator.role}: loading from cache")
-                    result = annotator.load_annotations_from_json(cache_file)
-                else:
-                    tqdm.write(f"  [{xml_file.stem}] {annotator.role}: annotating {len(texts)} subunit(s)")
-                    result = annotator.annotate_and_save(texts=texts, filename=cache_file)
-                chunk_annotes[annotator.role] = result
-            annotes[xml_file] = chunk_annotes
+
+        with Progress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            chunk_task = progress.add_task("[bold]Chunks", total=len(chunks))
+            sent_task = progress.add_task("", total=0, visible=False)
+
+            for xml_file, subunits in chunks:
+                chunk_id = xml_file.stem
+                texts = ["".join(s.itertext()) for s in subunits]
+                chunk_annotes = {}
+
+                for annotator in self.annotator_list:
+                    cache_file = annotation_dir / f"{chunk_id}_{annotator.role}.json"
+                    if cache_file.exists():
+                        progress.log(f"[{chunk_id}] {annotator.role}: cache")
+                        result = annotator.load_annotations_from_json(cache_file)
+                    else:
+                        progress.update(
+                            sent_task,
+                            description=f"  [dim]{annotator.role}[/] [{chunk_id}]",
+                            total=len(texts),
+                            completed=0,
+                            visible=True,
+                        )
+                        result = annotator.annotate_and_save(
+                            texts=texts,
+                            filename=cache_file,
+                            on_sentence=lambda: progress.advance(sent_task),
+                        )
+                        progress.update(sent_task, visible=False)
+
+                    chunk_annotes[annotator.role] = result
+
+                annotes[xml_file] = chunk_annotes
+                progress.advance(chunk_task)
+
         return annotes
 
     def _create_sentences(self, annotes: Dict) -> Dict:
@@ -92,13 +174,15 @@ class Generator:
             n = len(chunk_annotes[first_role])
             chunk_sentences = []
             for i in range(n):
-                sentence_data = {role: outputs[i].annotation for role, outputs in chunk_annotes.items()}
+                sentence_data = {
+                    role: outputs[i].annotation
+                    for role, outputs in chunk_annotes.items()
+                    if i < len(outputs)
+                }
                 sentence_data["base_text"] = chunk_annotes[first_role][i].text
-                # Replace None annotations (failed LLM calls) with a failure flag so
-                # the template can render a fallback rather than crashing.
                 for role in [a.role for a in self.annotator_list]:
                     if sentence_data.get(role) is None:
-                        del sentence_data[role]
+                        sentence_data.pop(role, None)
                         sentence_data[f"{role}_failed"] = True
                 for annotator in self.word_annotators:
                     role = annotator.role
@@ -108,7 +192,14 @@ class Generator:
                     for t_idx, token in enumerate(sentence_data[role]):
                         if not token.get("annotation"):
                             continue
-                        token["id"] = f"tk-{chunk_id}-{i}-{t_idx}"
+                        # Role is part of the id: two word annotators may tokenize
+                        # the same sentence differently, so a role-free id would
+                        # collide in the shared tokens table (position stays last).
+                        token["id"] = f"tk-{chunk_id}-{i}-{role}-{t_idx}"
+                        # NFC here keeps display, data-form, DB form, and the
+                        # ?highlight= key identical so frequency counts and
+                        # highlighting all match on the same canonical string.
+                        token["text"] = normalize_form(token.get("text", ""))
                         normalized.append(token)
                     sentence_data[role] = normalized
                 chunk_sentences.append(sentence_data)
@@ -162,10 +253,118 @@ class Generator:
             out_path.write_text(html)
             print(f"Wrote {out_path}")
 
+    def write_db(self, sentences: Dict, db: AnnotationDB) -> None:
+        sorted_chunks = sorted(
+            sentences.items(),
+            key=lambda kv: _stem_sort_key(kv[0].stem),
+        )
+        failures = 0
+        with Progress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("[bold]Writing DB", total=len(sorted_chunks))
+
+            for chunk_seq, (xml_file, chunk_sentences) in enumerate(sorted_chunks):
+                chunk_id = xml_file.stem
+
+                if db.chunk_exists(chunk_id):
+                    progress.log(f"[{chunk_id}] db: already present, skipping")
+                    progress.advance(task)
+                    continue
+
+                try:
+                    db.write_chunk(chunk_id, sequence=chunk_seq, source_path=str(xml_file))
+
+                    for sent_i, sentence in enumerate(chunk_sentences):
+                        sentence_id = f"{chunk_id}-{sent_i}"
+                        db.write_sentence(sentence_id, chunk_id=chunk_id, position=sent_i)
+
+                        for annotator in self.word_annotators:
+                            role = annotator.role
+                            if role not in sentence:
+                                continue
+                            for token in sentence[role]:
+                                token_id = token["id"]
+                                position = int(token_id.rsplit("-", 1)[-1])
+                                label = token["annotation"].get("label")
+                                if not label:
+                                    continue
+                                db.write_token(
+                                    token_id=token_id,
+                                    sentence_id=sentence_id,
+                                    chunk_id=chunk_id,
+                                    position=position,
+                                    form=token["text"],
+                                )
+                                db.write_word_annotation(
+                                    token_id=token_id,
+                                    annotator=role,
+                                    value=label,
+                                    confidence=token["annotation"].get("confidence"),
+                                )
+                                # Persist every other returned field (lemma,
+                                # part_of_speech, morphology, …) as queryable
+                                # features. Mirror the popup: drop the canonical
+                                # key and any field that just repeats the gloss.
+                                features = {
+                                    k: v
+                                    for k, v in token["annotation"].items()
+                                    if k not in ("label", "confidence") and v != label
+                                }
+                                db.write_word_annotation_features(
+                                    token_id=token_id,
+                                    annotator=role,
+                                    features=features,
+                                )
+
+                        for annotator in self.sentence_annotators:
+                            role = annotator.role
+                            if role not in sentence:
+                                continue
+                            ann = sentence[role]
+                            summary = ann.get("summary")
+                            if not summary:
+                                continue
+                            db.write_sentence_annotation(
+                                sentence_id=sentence_id,
+                                annotator=role,
+                                value=summary,
+                                confidence=ann.get("confidence"),
+                            )
+
+                    db.commit()
+                    progress.log(f"[{chunk_id}] db: wrote {len(chunk_sentences)} sentences")
+
+                except Exception as e:
+                    db.rollback()
+                    progress.log(f"[{chunk_id}] db: write failed, rolled back — {e}")
+                    failures += 1
+
+                progress.advance(task)
+
+        if failures:
+            console.print(f"[yellow]DB write: {failures}/{len(sorted_chunks)} chunk(s) failed (see log above).[/yellow]")
+
+    def write_search(self, html_dir: Path) -> None:
+        search_template = self.env.get_template("search.html.jinja")
+        html = search_template.render(
+            title=f"Search — {self.work}",
+            work=self.work,
+            author=self.author,
+            depth_prefix="",
+        )
+        out_path = html_dir / "search.html"
+        out_path.write_text(html)
+        print(f"Wrote {out_path}")
+
     def write_index(self, html_dir: Path) -> None:
         all_stems = sorted(
-            [p.stem for p in html_dir.glob("*.html") if p.stem != "index"],
-            key=lambda s: [int(x) for x in s.split(".")],
+            [p.stem for p in html_dir.glob("*.html") if p.stem not in ("index", "search")],
+            key=_stem_sort_key,
         )
         sections = [{"label": stem, "href": f"{stem}.html"} for stem in all_stems]
         index_template = self.env.get_template("index.html.jinja")
@@ -205,14 +404,22 @@ class Generator:
         out_path.write_text(html)
         print(f"Wrote vocab index to {out_path}")
 
-    def generate_site(self) -> None:
+    def generate_site(self, write_db: bool = True) -> None:
         annotation_dir = self.output_dir / "annotations"
         html_dir = self.output_dir / "html"
         annotes = self._create_annotations(annotation_dir=annotation_dir)
         sentences = self._create_sentences(annotes)
         self.write_html(sentences, html_dir=html_dir)
         self.write_index(html_dir)
+        self.write_search(html_dir)
         vocab = self._collect_vocab(sentences)
         vocab_dir = html_dir / "vocab"
         self.write_vocab(vocab, vocab_dir)
         self.write_vocab_index(vocab, vocab_dir)
+        if write_db:
+            db_path = html_dir / "data" / "annotations.db"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            with AnnotationDB(db_path) as db:
+                db.create_schema()
+                db.register_annotators(self.annotator_list)
+                self.write_db(sentences, db)

@@ -3,6 +3,7 @@ import json_repair
 import json
 import jsonschema
 
+
 def extract_json_from_annotation(annotation, regex_pattern=r"\{.*\}"):
     """
     Extracts JSON content from the annotation using a regular expression pattern.
@@ -12,6 +13,7 @@ def extract_json_from_annotation(annotation, regex_pattern=r"\{.*\}"):
     if match:
         return match.group(0)
     return None
+
 
 def validate_annotation(annotation, json_schema=None):
     """
@@ -32,3 +34,40 @@ def validate_annotation(annotation, json_schema=None):
     except Exception as e:
         print(f"Annotation validation error: {e}")
         return False
+
+
+def validate_output_schema(
+    annotation: dict,
+    schema: dict[str, type] | None,
+    required_key: str,
+) -> bool:
+    """
+    Validate a parsed annotation dict against an annotator's output_schema.
+
+    Always checks that required_key ("label" or "summary") is present and a
+    non-empty string. If schema is a dict, also checks that every declared
+    field is present with the correct type. Extra fields are always permitted.
+
+    Returns True if valid, False (with a diagnostic print) otherwise.
+    """
+    if not isinstance(annotation, dict):
+        print(f"Annotation is not a dict: {annotation!r}")
+        return False
+    value = annotation.get(required_key)
+    if not isinstance(value, str) or not value:
+        print(f"Annotation missing required non-empty string '{required_key}': {annotation}")
+        return False
+    if schema is None:
+        return True
+    for field, expected_type in schema.items():
+        field_value = annotation.get(field)
+        if field_value is None:
+            print(f"Annotation missing declared field '{field}': {annotation}")
+            return False
+        if not isinstance(field_value, expected_type):
+            print(
+                f"Annotation field '{field}' expected {expected_type.__name__}, "
+                f"got {type(field_value).__name__}: {annotation}"
+            )
+            return False
+    return True

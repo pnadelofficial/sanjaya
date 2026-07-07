@@ -51,6 +51,11 @@ def main():
         metavar="ID",
         help="Process only these chunk IDs (overrides chunk_filter in config).",
     )
+    parser.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Skip writing the SQLite database (useful for debugging HTML output).",
+    )
     cli_args = parser.parse_args()
 
     config_path = Path(cli_args.config).resolve()
@@ -88,7 +93,7 @@ def main():
         output_dir=output_dir,
         chunk_filter=chunk_filter,
     )
-    gen.generate_site()
+    gen.generate_site(write_db=not cli_args.no_db)
 
 
 if __name__ == "__main__":

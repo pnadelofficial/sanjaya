@@ -2,7 +2,9 @@ import requests
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
-from typing import List, Optional, Dict, Any, Union
+from typing import Callable, ClassVar, List, Optional, Dict, Any, Union
+
+from . import validator
 
 
 @dataclass
@@ -43,6 +45,14 @@ class WordAnnotator(ABC):
     per token. Each token's annotation dict must include a "label" key — the
     value displayed in the reading interface.
 
+    output_schema declares the structure of the annotation dict beyond "label":
+      None  → output is a plain string (the label itself, nothing else validated)
+      dict  → output has label + structured metadata fields declared here;
+              "label" is always implicit and never declared in output_schema
+
+    output_schema is also used at build time to derive the SQLite column schema
+    for this annotator's data.
+
     Subclasses may override `tokenize()` for language-specific behaviour;
     the default uses NLTK's word_tokenize.
 
@@ -50,6 +60,7 @@ class WordAnnotator(ABC):
     morphology lookup, etc.). No LLM machinery lives in this base class.
     """
     role: str = ""
+    output_schema: ClassVar[dict[str, type] | None] = None
 
     @abstractmethod
     def annotate(self, sentence: str) -> List[Annotation]:
@@ -69,11 +80,22 @@ class WordAnnotator(ABC):
             data = json.load(f)
         return [Annotation(text=item["text"], annotation=item["annotation"]) for item in data]
 
-    def annotate_and_save(self, texts: List[str], filename: str) -> List[Annotation]:
+    def annotate_and_save(
+        self,
+        texts: List[str],
+        filename: str,
+        on_sentence: Optional[Callable[[], None]] = None,
+    ) -> List[Annotation]:
         results = []
         for text in texts:
             token_annotations = self.annotate(text)
-            results.append(Annotation(text=text, annotation=[asdict(a) for a in token_annotations]))
+            valid_tokens = [
+                a for a in token_annotations
+                if validator.validate_output_schema(a.annotation, self.output_schema, "label")
+            ]
+            results.append(Annotation(text=text, annotation=[asdict(a) for a in valid_tokens]))
+            if on_sentence is not None:
+                on_sentence()
         self.save_as_json(results, filename)
         return results
 
@@ -87,10 +109,19 @@ class SentenceAnnotator(ABC):
     or None on failure. The annotation dict must include a "summary" key — the
     main text displayed in the reading interface.
 
+    output_schema declares the structure of the annotation dict beyond "summary":
+      None  → output is a plain string (the summary itself, nothing else validated)
+      dict  → output has summary + structured metadata fields declared here;
+              "summary" is always implicit and never declared in output_schema
+
+    output_schema is also used at build time to derive the SQLite column schema
+    for this annotator's data.
+
     The annotation backend is entirely up to the subclass. No LLM machinery
     lives in this base class.
     """
     role: str = ""
+    output_schema: ClassVar[dict[str, type] | None] = None
 
     @abstractmethod
     def annotate(self, sentence: str) -> Optional[Annotation]:
@@ -106,10 +137,21 @@ class SentenceAnnotator(ABC):
             data = json.load(f)
         return [Annotation(text=item["text"], annotation=item["annotation"]) for item in data]
 
-    def annotate_and_save(self, texts: List[str], filename: str) -> List[Annotation]:
+    def annotate_and_save(
+        self,
+        texts: List[str],
+        filename: str,
+        on_sentence: Optional[Callable[[], None]] = None,
+    ) -> List[Annotation]:
         results = []
         for text in texts:
             ann = self.annotate(text)
+            if ann is not None and not validator.validate_output_schema(
+                ann.annotation, self.output_schema, "summary"
+            ):
+                ann = None
             results.append(Annotation(text=text, annotation=ann.annotation if ann else None))
+            if on_sentence is not None:
+                on_sentence()
         self.save_as_json(results, filename)
         return results

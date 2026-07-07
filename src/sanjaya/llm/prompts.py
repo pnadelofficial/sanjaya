@@ -74,8 +74,9 @@ You will be given a sentence in $language, along with its morphological analysis
 Return your results in a JSON object as specified below:
 ``` json
 {
-    "${language}_id": "The unique ID of the ${language} word",
-    "${language}_word": "The original ${language} word",
+    "lemma": "The lemma of the $language word",
+    "part_of_speech": "The part of speech of the $language word",
+    "morphology": "The morphological features of the $language word",
     "gloss": "The English gloss for the $language word"
 }
 ```

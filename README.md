@@ -79,6 +79,11 @@ sanjaya --config config.yaml --chunk 1.1 2.1
 
 Each chunk ID is a prefix match, so `1.1` also processes `1.1.1`, `1.1.2`, etc. `--chunk` overrides `chunk_filter` in the config file.
 
+To skip writing the SQLite database (faster iteration on HTML templates):
+```bash
+sanjaya --config config.yaml --no-db
+```
+
 ### 4. View the output
 
 ```bash
@@ -93,7 +98,10 @@ Then open `http://localhost:8000`.
 ```
 output/<work>/html/
   index.html        ← chunk table of contents
+  search.html       ← full-text search over all annotations
   1.1.html          ← chunk pages with clickable glosses
+  data/
+    annotations.db  ← SQLite database (fetched client-side by sql.js)
   vocab/
     index.html      ← alphabetical vocabulary list
     <form>.html     ← one page per unique word form
@@ -103,13 +111,15 @@ output/<work>/html/
 
 **Clickable glosses** — click any word in a chunk page to reveal its gloss in a popup.
 
+**Full-text search** — `search.html` queries the annotation database client-side via [sql.js](https://sql.js.org/) (WebAssembly SQLite). No server required. Results are grouped by form and annotator with links to every chunk where the match appears.
+
 **Vocabulary index** — every unique word form gets its own page listing all collected glosses and every sentence in which it appears, with links back to the source chunk. Each token has a stable ID of the form `tk-[chunk]-[sentence]-[word]`.
 
 **Highlight on navigation** — clicking an occurrence link from a vocab page highlights all instances of that word form on the destination chunk page.
 
 ## Caching
 
-Annotation results are cached as JSON files under `output/<work>/annotations/`. Re-running the pipeline skips any chunk that has already been annotated.
+Annotation results are cached as JSON files under `output/<work>/annotations/`. Re-running the pipeline skips any chunk that has already been annotated. The SQLite DB applies the same logic: chunks already present in the `chunks` table are skipped on re-run.
 
 ## Extending
 

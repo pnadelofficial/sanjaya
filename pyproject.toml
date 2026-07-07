@@ -11,7 +11,7 @@ dependencies = [
     "requests",
     "nltk",
     "jinja2",
-    "tqdm",
+    "rich",
     "pyyaml",
 ]
 

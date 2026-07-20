@@ -7,29 +7,22 @@ Usage:
 """
 
 import argparse
-import importlib
 from pathlib import Path
 
 import yaml
 from perseus_cts.models import TEIDocument
 
 from sanjaya.site.generator import Generator
+from sanjaya.utils import load_object
 
 
 DEFAULT_TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
-def _load_class(dotted_path: str):
-    """Import a class from a dotted module path, e.g. 'sanjaya.llm.annotators.GlossAnnotator'."""
-    module_path, class_name = dotted_path.rsplit(".", 1)
-    module = importlib.import_module(module_path)
-    return getattr(module, class_name)
-
-
 def _build_annotators(annotator_configs: list) -> list:
     annotators = []
     for entry in annotator_configs:
-        cls = _load_class(entry["class"])
+        cls = load_object(entry["class"])
         annotators.append(cls(**entry.get("args", {})))
     return annotators
 

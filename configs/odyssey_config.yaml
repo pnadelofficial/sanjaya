@@ -1,0 +1,31 @@
+# sanjaya configuration
+# Run with: sanjaya --config config.yaml
+# Process a subset:  sanjaya --config config.yaml --chunk 1.1 1.2
+
+work:
+  title: "Odyssey"
+  author: "Homer"
+
+source:
+  file: "../data/tlg0012.tlg002.perseus-grc2.xml"    # path to TEI XML source, relative to this file
+  xpath: ".//tei:l"              # XPath selecting the text subunits to annotate
+
+output:
+  dir: "../output/odyssey"       # relative to this file
+
+# chunk_filter: "1.1"            # optional: string or list of chunk IDs to process
+#   e.g. chunk_filter: ["1.1", "1.2"]
+
+# templates:
+#   dir: "src/sanjaya/templates" # optional: defaults to the bundled templates
+
+annotators:
+  - class: sanjaya.llm.annotators.GlossAnnotator
+    args:
+      base_url: "http://localhost:8080"
+      language: "Ancient Greek"
+      author: "Homer"
+      work: "Odyssey"
+      prompt: sanjaya.llm.prompts.gloss_prompt_no_pos
+      # model: "gpt-4o"          # uncomment for hosted APIs
+      # api_key: "sk-..."        # omit for local servers

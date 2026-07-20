@@ -1,6 +1,6 @@
 from .annotations import WordAnnotator, SentenceAnnotator, Annotation, call_model
-from . import prompts
 from . import validator
+from sanjaya.utils import load_object
 
 from typing import List, Optional
 
@@ -30,6 +30,7 @@ class GlossAnnotator(WordAnnotator):
         work: str,
         model: str = "default",
         api_key: Optional[str] = None,
+        prompt: str = "sanjaya.llm.prompts.gloss_prompt",
     ):
         self.base_url = base_url
         self.language = language
@@ -37,12 +38,13 @@ class GlossAnnotator(WordAnnotator):
         self.work = work
         self.model = model
         self.api_key = api_key
+        self.prompt = load_object(prompt)
 
     def annotate(self, sentence: str) -> List[Annotation]:
         tokens = self.tokenize(sentence)
         annotations = []
         for i, token in enumerate(tokens):
-            messages = prompts.create_gloss_messages(
+            messages = self.prompt.create_messages(
                 language=self.language,
                 author=self.author,
                 work=self.work,
@@ -85,6 +87,7 @@ class TranslationAnnotator(SentenceAnnotator):
         work: str,
         model: str = "default",
         api_key: Optional[str] = None,
+        prompt: str = "sanjaya.llm.prompts.translation_prompt",
     ):
         self.base_url = base_url
         self.language = language
@@ -92,14 +95,16 @@ class TranslationAnnotator(SentenceAnnotator):
         self.work = work
         self.model = model
         self.api_key = api_key
+        self.prompt = load_object(prompt)
 
     def annotate(self, sentence: str) -> Optional[Annotation]:
-        messages = prompts.create_translation_messages(
+        # @TODO come back for drama: no speaker handling yet, so the
+        # play-variant prompt (prompts.translation_prompt_play) is unused.
+        messages = self.prompt.create_messages(
             language=self.language,
             author=self.author,
             work=self.work,
             sentence=sentence,
-            speaker=None,  # @TODO come back for drama
         )
         response = call_model(self.base_url, messages, model=self.model, api_key=self.api_key)
         raw = validator.extract_json_from_annotation(

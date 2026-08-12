@@ -13,14 +13,14 @@ source:
 output:
   dir: "../output/iliad"       # relative to this file
 
-# chunk_filter: "1.1"            # optional: string or list of chunk IDs to process
+chunk_filter: "1.1"            # optional: string or list of chunk IDs to process
 #   e.g. chunk_filter: ["1.1", "1.2"]
 
 # templates:
 #   dir: "src/sanjaya/templates" # optional: defaults to the bundled templates
 
 annotators:
-  - class: sanjaya.llm.annotators.GlossAnnotator
+  - class: sanjaya.llm.nlp_pipeline_annotators.NLPGlossAnnotator
     args:
       base_url: "http://localhost:8080"
       language: "Ancient Greek"

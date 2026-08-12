@@ -3,7 +3,7 @@ name = "sanjaya"
 version = "0.1.0"
 description = "Generate richly annotated reading environments for historical texts."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "perseus-cts @ git+https://github.com/PerseusDLCode/perseus-cts.git",
     "json-repair",
@@ -13,6 +13,7 @@ dependencies = [
     "jinja2",
     "rich",
     "pyyaml",
+    "nlp-pipeline @ git+https://github.com/PerseusDLCode/nlp_pipeline.git",
 ]
 
 [project.scripts]

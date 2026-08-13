@@ -49,6 +49,11 @@ def main():
         action="store_true",
         help="Skip writing the SQLite database (useful for debugging HTML output).",
     )
+    parser.add_argument(
+        "--no-html",
+        action="store_true",
+        help="Skip HTML generation, only output JSON data.",
+    )
     cli_args = parser.parse_args()
 
     config_path = Path(cli_args.config).resolve()
@@ -86,7 +91,7 @@ def main():
         output_dir=output_dir,
         chunk_filter=chunk_filter,
     )
-    gen.generate_site(write_db=not cli_args.no_db)
+    gen.generate_site(write_db=not cli_args.no_db, write_html=not cli_args.no_html)
 
 
 if __name__ == "__main__":

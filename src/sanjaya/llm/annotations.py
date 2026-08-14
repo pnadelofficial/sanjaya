@@ -109,6 +109,12 @@ class SentenceAnnotator(ABC):
     or None on failure. The annotation dict must include a "summary" key — the
     main text displayed in the reading interface.
 
+    annotate() also receives an optional `speaker` — the name Generator
+    resolved from an enclosing TEI <sp>'s <speaker> child, for text where the
+    sentence is a line of dialogue (e.g. drama). It is None for text with no
+    such markup. Subclasses that have no use for it (most do not) can ignore
+    the parameter entirely.
+
     output_schema declares the structure of the annotation dict beyond "summary":
       None  → output is a plain string (the summary itself, nothing else validated)
       dict  → output has summary + structured metadata fields declared here;
@@ -124,7 +130,7 @@ class SentenceAnnotator(ABC):
     output_schema: ClassVar[dict[str, type] | None] = None
 
     @abstractmethod
-    def annotate(self, sentence: str) -> Optional[Annotation]:
+    def annotate(self, sentence: str, speaker: Optional[str] = None) -> Optional[Annotation]:
         """Return a single Annotation for the sentence, or None on failure. Must include 'summary'."""
         ...
 
@@ -141,11 +147,13 @@ class SentenceAnnotator(ABC):
         self,
         texts: List[str],
         filename: str,
+        speakers: Optional[List[Optional[str]]] = None,
         on_sentence: Optional[Callable[[], None]] = None,
     ) -> List[Annotation]:
         results = []
-        for text in texts:
-            ann = self.annotate(text)
+        speakers = speakers or [None] * len(texts)
+        for text, speaker in zip(texts, speakers):
+            ann = self.annotate(text, speaker)
             if ann is not None and not validator.validate_output_schema(
                 ann.annotation, self.output_schema, "summary"
             ):

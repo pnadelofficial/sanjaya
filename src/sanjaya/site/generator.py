@@ -20,7 +20,7 @@ from perseus_cts.chunker import Chunker
 from lxml import etree
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Tuple, Union
 from rich.progress import Progress, BarColumn, MofNCompleteColumn, TextColumn, TimeElapsedColumn
 from rich.console import Console
 
@@ -119,9 +119,25 @@ class Generator:
         xml_files = [p for p in self.chunk_dir.glob("*.xml") if self._matches_filter(p.stem)]
         return {xml_file: self._get_one(xml_file) for xml_file in xml_files}
 
-    def _create_annotations(self, annotation_dir: Path) -> Dict:
+    def _get_speaker(self, element: etree._Element) -> Optional[str]:
+        """
+        Return the speaker name for a subunit nested inside a TEI <sp>
+        (drama), read from that <sp>'s <speaker> child element. None for
+        non-drama text or a subunit with no enclosing <sp>.
+        """
+        sp = element.xpath("ancestor::tei:sp[1]", namespaces=self.ns)
+        if not sp:
+            return None
+        speaker_el = sp[0].find("tei:speaker", namespaces=self.ns)
+        if speaker_el is None:
+            return None
+        text = "".join(speaker_el.itertext()).strip()
+        return text or None
+
+    def _create_annotations(self, annotation_dir: Path) -> Tuple[Dict, Dict]:
         annotation_dir.mkdir(parents=True, exist_ok=True)
         annotes = {}
+        speakers_by_chunk = {}
         chunks = list(self.all_raw_pages.items())
 
         with Progress(
@@ -137,6 +153,8 @@ class Generator:
             for xml_file, subunits in chunks:
                 chunk_id = xml_file.stem
                 texts = ["".join(s.itertext()) for s in subunits]
+                speakers = [self._get_speaker(s) for s in subunits]
+                speakers_by_chunk[xml_file] = speakers
                 chunk_annotes = {}
 
                 for annotator in self.annotator_list:
@@ -152,10 +170,16 @@ class Generator:
                             completed=0,
                             visible=True,
                         )
+                        # Only SentenceAnnotator.annotate_and_save() accepts
+                        # speakers — word-level annotation has no use for them.
+                        extra_kwargs = (
+                            {"speakers": speakers} if isinstance(annotator, SentenceAnnotator) else {}
+                        )
                         result = annotator.annotate_and_save(
                             texts=texts,
                             filename=cache_file,
                             on_sentence=lambda: progress.advance(sent_task),
+                            **extra_kwargs,
                         )
                         progress.update(sent_task, visible=False)
 
@@ -164,15 +188,16 @@ class Generator:
                 annotes[xml_file] = chunk_annotes
                 progress.advance(chunk_task)
 
-        return annotes
+        return annotes, speakers_by_chunk
 
-    def _create_sentences(self, annotes: Dict) -> Dict:
+    def _create_sentences(self, annotes: Dict, speakers_by_chunk: Dict) -> Dict:
         sentences = {}
         first_role = self.annotator_list[0].role
         for xml_file, chunk_annotes in annotes.items():
             chunk_id = xml_file.stem
             n = len(chunk_annotes[first_role])
             chunk_sentences = []
+            chunk_speakers = speakers_by_chunk.get(xml_file, [])
             for i in range(n):
                 sentence_data = {
                     role: outputs[i].annotation
@@ -180,6 +205,8 @@ class Generator:
                     if i < len(outputs)
                 }
                 sentence_data["base_text"] = chunk_annotes[first_role][i].text
+                if i < len(chunk_speakers) and chunk_speakers[i]:
+                    sentence_data["speaker"] = chunk_speakers[i]
                 for role in [a.role for a in self.annotator_list]:
                     if sentence_data.get(role) is None:
                         sentence_data.pop(role, None)
@@ -281,7 +308,12 @@ class Generator:
 
                     for sent_i, sentence in enumerate(chunk_sentences):
                         sentence_id = f"{chunk_id}-{sent_i}"
-                        db.write_sentence(sentence_id, chunk_id=chunk_id, position=sent_i)
+                        db.write_sentence(
+                            sentence_id,
+                            chunk_id=chunk_id,
+                            position=sent_i,
+                            speaker=sentence.get("speaker"),
+                        )
 
                         for annotator in self.word_annotators:
                             role = annotator.role
@@ -420,8 +452,8 @@ class Generator:
     def generate_site(self, write_db: bool = True, write_html: bool = True) -> None:
         annotation_dir = self.output_dir / "annotations"
         html_dir = self.output_dir / "html"
-        annotes = self._create_annotations(annotation_dir=annotation_dir)
-        sentences = self._create_sentences(annotes)
+        annotes, speakers_by_chunk = self._create_annotations(annotation_dir=annotation_dir)
+        sentences = self._create_sentences(annotes, speakers_by_chunk)
         if write_html:
             self.write_html(sentences, html_dir=html_dir)
             self.write_index(html_dir)

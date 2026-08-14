@@ -75,7 +75,7 @@ class CommentAnnotator(SentenceAnnotator):
             return value.strip().lower() == "true"
         return False
 
-    def annotate(self, sentence: str) -> Optional[Annotation]:
+    def annotate(self, sentence: str, speaker: Optional[str] = None) -> Optional[Annotation]:
         if not self._needs_comment(sentence):
             return None
 
@@ -181,6 +181,13 @@ class TranslationAnnotator(SentenceAnnotator):
     """
     Sentence-level translation annotator backed by an LLM.
 
+    When the sentence comes from a line spoken within a TEI <sp> (drama),
+    Generator resolves the speaker's name from that <sp>'s <speaker> child
+    and passes it into annotate(). In that case play_prompt is used instead
+    of prompt, with the speaker's name prefixed onto the sentence so the
+    translation reflects who's speaking; for non-drama text (speaker is
+    None) prompt is used exactly as before.
+
     Returns an Annotation whose dict includes all fields returned by the LLM
     plus a canonical "summary" key (mapped from the LLM's "translation" field)
     required by SentenceAnnotator.
@@ -200,6 +207,7 @@ class TranslationAnnotator(SentenceAnnotator):
         model: str = "default",
         api_key: Optional[str] = None,
         prompt: str = "sanjaya.llm.prompts.translation_prompt",
+        play_prompt: str = "sanjaya.llm.prompts.translation_prompt_play",
     ):
         self.base_url = base_url
         self.language = language
@@ -208,16 +216,24 @@ class TranslationAnnotator(SentenceAnnotator):
         self.model = model
         self.api_key = api_key
         self.prompt = load_object(prompt)
+        self.play_prompt = load_object(play_prompt)
 
-    def annotate(self, sentence: str) -> Optional[Annotation]:
-        # @TODO come back for drama: no speaker handling yet, so the
-        # play-variant prompt (prompts.translation_prompt_play) is unused.
-        messages = self.prompt.create_messages(
-            language=self.language,
-            author=self.author,
-            work=self.work,
-            sentence=sentence,
-        )
+    def annotate(self, sentence: str, speaker: Optional[str] = None) -> Optional[Annotation]:
+        if speaker:
+            messages = self.play_prompt.create_messages(
+                language=self.language,
+                author=self.author,
+                work=self.work,
+                sentence=sentence,
+                speaker=speaker,
+            )
+        else:
+            messages = self.prompt.create_messages(
+                language=self.language,
+                author=self.author,
+                work=self.work,
+                sentence=sentence,
+            )
         response = call_model(self.base_url, messages, model=self.model, api_key=self.api_key)
         raw = validator.extract_json_from_annotation(
             response.get("choices", [{}])[0].get("message", {}).get("content", "")

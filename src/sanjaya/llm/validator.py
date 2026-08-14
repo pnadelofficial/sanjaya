@@ -1,4 +1,3 @@
-import re
 import json_repair
 import json
 import jsonschema
@@ -6,13 +5,61 @@ import jsonschema
 
 def extract_json_from_annotation(annotation, regex_pattern=r"\{.*\}"):
     """
-    Extracts JSON content from the annotation using a regular expression pattern.
-    Returns the extracted JSON string if found, None otherwise.
+    Extracts a JSON value from the annotation text.
+
+    Finds every balanced top-level bracket pair matching the type implied by
+    regex_pattern (an array for a pattern containing '[', an object
+    otherwise), tracking string-literal state while matching so brackets
+    embedded in string content (e.g. "[interpolation]" inside philological
+    commentary) don't get mistaken for structural JSON brackets. Among the
+    candidate spans, prefers the first one that parses as strict JSON —
+    this skips over incidental bracketed text preceding the real payload
+    (e.g. a model preamble like "[see note]") — falling back to the very
+    first candidate span if none parse, so a genuinely malformed-but-close
+    response still reaches validate_annotation()'s repair step.
+
+    Returns the extracted JSON string if any candidate span was found,
+    None otherwise.
     """
-    match = re.search(regex_pattern, annotation, re.DOTALL)
-    if match:
-        return match.group(0)
-    return None
+    open_char, close_char = ("[", "]") if "[" in regex_pattern else ("{", "}")
+
+    def balanced_span(start):
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(annotation)):
+            ch = annotation[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == open_char:
+                depth += 1
+            elif ch == close_char:
+                depth -= 1
+                if depth == 0:
+                    return annotation[start:i + 1]
+        return None
+
+    candidates = [
+        span for i, ch in enumerate(annotation) if ch == open_char
+        for span in [balanced_span(i)] if span is not None
+    ]
+    if not candidates:
+        return None
+    for candidate in candidates:
+        try:
+            json.loads(candidate)
+            return candidate
+        except ValueError:
+            continue
+    return candidates[0]
 
 
 def validate_annotation(annotation, json_schema=None):

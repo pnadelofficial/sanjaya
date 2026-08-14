@@ -27,5 +27,20 @@ annotators:
       author: "Homer"
       work: "Iliad"
       prompt: sanjaya.llm.prompts.gloss_prompt_no_pos
-      # model: "gpt-4o"          # uncomment for hosted APIs
-      # api_key: "sk-..."        # omit for local servers
+
+  - class: sanjaya.llm.annotators.TranslationAnnotator
+    args:
+      base_url: "http://localhost:8080"
+      language: "Ancient Greek"
+      author: "Homer"
+      work: "Iliad"
+      prompt: sanjaya.llm.prompts.translation_prompt 
+
+  - class: sanjaya.llm.annotators.CommentAnnotator
+    args:
+      base_url: "http://localhost:8080"
+      language: "Ancient Greek"
+      author: "Homer"
+      work: "Iliad"
+      classifier_prompt: sanjaya.llm.prompts.comment_classifier_prompt
+      writer_prompt: sanjaya.llm.prompts.comment_writer_prompt

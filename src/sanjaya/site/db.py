@@ -28,7 +28,8 @@ Usable independently of Generator:
 Write ordering must respect foreign-key dependencies:
     chunks → sentences → tokens → word_annotations
                                 → word_annotation_features
-                                → sentence_annotations
+                       → sentence_annotations
+                       → sentence_annotation_features
 """
 
 import json
@@ -125,6 +126,18 @@ class AnnotationDB:
                 UNIQUE(token_id, annotator, key)
             );
 
+            -- sentence-level analog of word_annotation_features: extra fields
+            -- a sentence annotator returns beyond the canonical "summary"
+            -- (e.g. CommentAnnotator's per-comment type tagging).
+            CREATE TABLE IF NOT EXISTS sentence_annotation_features (
+                id          INTEGER PRIMARY KEY,
+                sentence_id TEXT REFERENCES sentences(sentence_id),
+                annotator   TEXT NOT NULL,
+                key         TEXT NOT NULL,
+                value       TEXT NOT NULL,
+                UNIQUE(sentence_id, annotator, key)
+            );
+
             -- build-time metadata: one row per annotator, populated by
             -- register_annotators() before any data rows are written
             CREATE TABLE IF NOT EXISTS annotators (
@@ -141,6 +154,8 @@ class AnnotationDB:
             -- the index; token_id lead so per-token feature joins stay cheap.
             CREATE INDEX IF NOT EXISTS idx_waf_key_value ON word_annotation_features(key, value);
             CREATE INDEX IF NOT EXISTS idx_waf_token ON word_annotation_features(token_id, annotator);
+            CREATE INDEX IF NOT EXISTS idx_saf_key_value ON sentence_annotation_features(key, value);
+            CREATE INDEX IF NOT EXISTS idx_saf_sentence ON sentence_annotation_features(sentence_id, annotator);
         """)
         self.conn.commit()
 
@@ -285,6 +300,33 @@ class AnnotationDB:
             " (sentence_id, annotator, value, confidence) VALUES (?, ?, ?, ?)",
             (sentence_id, annotator, value, confidence),
         )
+
+    def write_sentence_annotation_features(
+        self,
+        sentence_id: str,
+        annotator: str,
+        features: dict,
+    ) -> None:
+        """
+        Write extra per-sentence fields (e.g. CommentAnnotator's per-comment
+        "comments" list) for one sentence/annotator. Complements
+        write_sentence_annotation, which stores only the canonical "summary".
+        Non-string values are JSON-serialised; empty/None values are skipped.
+
+        Requires the sentence row to exist first (foreign key on sentence_id).
+        """
+        rows = []
+        for key, value in features.items():
+            if value is None or value == "":
+                continue
+            text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            rows.append((sentence_id, annotator, key, text))
+        if rows:
+            self.conn.executemany(
+                "INSERT OR REPLACE INTO sentence_annotation_features"
+                " (sentence_id, annotator, key, value) VALUES (?, ?, ?, ?)",
+                rows,
+            )
 
     # ------------------------------------------------------------------
     # Queries

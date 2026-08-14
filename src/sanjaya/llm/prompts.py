@@ -33,15 +33,12 @@ translation_system_prompt = Template("""
 # $language Translation Task
 You are an expert on $language syntax, grammar, usage and culture, currently assisting in the development of a robust reading list of students of a Master's program in Classical Studies. You are skilled in syntactic parsing and analysis, intending to use these skills to develop accurate descriptive statistics about the different syntactic structures present in $language literature. 
 ## Task description
-You will be given a sentence in $language, along with its morphological analysis and syntactic tree. Your task is to provide:
-1. An accurate English translation of the sentence.
-2. Contextual notes on usage, cultural references, or any other relevant information that would aid a student in understanding the sentence. Do not focus on the work or the author, per se. For example, do not start your notes with the a phrase like "This sentence is from [work] by [author]...". This will be unhelpful for readers. Rather focus on the sentence itself and its linguistic and stylistic features. Be sure to include any literary devices or stylistic features present in the sentence, including but not limited to chiasmus, asyndeton and anaphora.
+You will be given a sentence in $language, along with its morphological analysis and syntactic tree. Your task is to provide an accurate English translation of the sentence.
 ## Output format
 Return your results in a JSON object as specified below:
 ``` json
 {
-    "translation": "Your English translation here",
-    "notes": "Your contextual notes here"
+    "translation": "Your English translation here"
 }
 ```
 ## Notes
@@ -51,14 +48,13 @@ Return your results in a JSON object as specified below:
 """)
 
 translation_base_prompt = Template("""
-Please provide the English translation, word-level glosses, and contextual notes for the following $language sentence:
+Please provide the English translation for the following $language sentence:
 From: $author - $work
 Sentence: "$sentence"
 """)
 
-
 translation_base_prompt_play = Template("""
-Please provide the English translation, word-level glosses, and contextual notes for the following $language sentence:
+Please provide the English translation for the following $language sentence:
 From: $author - $work
 Sentence: "$speaker: $sentence"
 """)
@@ -90,7 +86,7 @@ gloss_system_prompt_no_pos = Template("""
 # $language Glossing Task
 You are an expert on $language syntax, grammar, usage and culture, currently assisting in the development of a robust reading list of students of a Master's program in Classical Studies. You are skilled in syntactic parsing and analysis, intending to use these skills to develop accurate descriptive statistics about the different syntactic structures present in $language literature. 
 ## Task description
-You will be given a sentence in $language, along with its morphological analysis and syntactic tree, as welll as a word from that sentence to focus on. Your task is to provide a word-level gloss for this specific word.
+You will be given a sentence in $language as welll as a word from that sentence to focus on. Your task is to provide a word-level gloss for this specific word.
 ## Output format
 Return your results in a JSON object as specified below:
 ``` json
@@ -113,9 +109,79 @@ From: $author - $work
 Sentence: "$sentence"
 """)
 
+# ------ Comment prompts ------
+# Split into two calls so the "should we comment at all" decision doesn't
+# share a model call with comment composition: a cheap classifier answers
+# needs_comment for every sentence, and the pricier writer prompt only runs
+# on the (rare) sentences the classifier flags.
+
+_comment_type_bars = """### Comment types
+Each comment must fit one of the seven categories below. The parenthetical is a strict bar: a routine instance of the category is NOT sufficient on its own.
+1. Textual Criticism and Variants (a real, documented manuscript variant, conjecture, or crux — not every unusual-looking spelling or attested morphological variant).
+2. Grammatical and Syntactical Analysis (a construction genuinely rare, irregular, or likely to mislead even a strong reader — not a construction any intermediate grammar already covers).
+3. Lexical and Semantic Clarification (a word that is rare, used in a specialized/technical sense, or genuinely ambiguous in context — not ordinary vocabulary, even if a beginner might not know it).
+4. Historical and Chronological Context (background needed to make sense of a specific reference — not general cultural texture already implied by the sentence).
+5. Geographical and Topographical Details (an identification or spatial relationship that matters for understanding the passage — not a passing mention of a well-known place).
+6. Biographical and Prosopographical Notes (a figure who needs identifying, or a genuinely non-obvious detail about a well-known figure — not a routine mention of a major, widely-known figure).
+7. Literary and Rhetorical Commentary (a marked, deliberate device — e.g. a specific allusion or notable structural figure — not a generic remark about style)."""
+
+comment_classifier_system_prompt = Template(f"""
+# $language Commentary Classification Task
+You are an expert on $language syntax, grammar, usage and intellectual history, currently assisting in the development of a robust reading list of students of a Master's program in Classical Studies.
+## Task description
+You will be given a sentence in $language. Decide whether this sentence needs a scholarly comment for an advanced graduate reader. Do not write the comment — only decide yes or no.
+Assume the reader already has a strong reading knowledge of $language grammar, standard vocabulary, and the major figures, places, and events of the period. Do not flag anything such a reader would already know or could work out unaided. A comment is warranted only when it would materially change or deepen that specific reader's understanding of this specific sentence — not merely when something truthful could be said about it.
+{_comment_type_bars}
+## Output format
+Return a JSON object with a single boolean field:
+``` json
+{{
+    "needs_comment": true
+}}
+```
+`needs_comment` must be a JSON boolean (`true` or `false`), never a string.
+## Notest.
+* If you are unsure, answer `false`.
+* Return only the JSON object above. Do not add any other keys.
+""")
+
+comment_classifier_base_prompt = Template("""Does the following $language sentence need a scholarly comment?
+From: $author - $work
+Sentence: "$sentence"
+""")
+
+comment_writer_system_prompt = Template(f"""
+# $language Commentary Writing Task
+You are an expert on $language syntax, grammar, usage and intellectual history, currently assisting in the development of a robust reading list of students of a Master's program in Classical Studies. You are skilled in syntactic parsing and analysis, intending to use these skills to develop accurate descriptive statistics about the different syntactic structures present in $language literature.
+## Task description
+A separate review has already determined that the following $language sentence warrants scholarly commentary. Your job is to write that commentary, in the output format below.
+Assume the reader is an advanced graduate student who already has a strong reading knowledge of $language grammar, standard vocabulary, and the major figures, places, and events of the period. Do not comment on anything such a reader would already know or could work out unaided.
+{_comment_type_bars}
+## Output format
+Return a JSON array of comment objects, one per comment, each shaped as:
+``` json
+{{
+    "comment": "The text of the comment.",
+    "comment_type": "One of the seven comment types above."
+}}
+```
+If, on reflection, no point in this sentence actually clears one of the bars above, return an array with a single object whose "comment" and "comment_type" fields are both the string "None" — the earlier review is a screen, not a guarantee, and you should still decline rather than force a weak comment.
+## Notes
+* Strongly prefer a single comment over several. Return more than one only when multiple, genuinely independent points each individually clear a bar on their own — never list several marginal observations just to fill out the response.
+* Pay close attention to the comment types and ensure your comment falls into one of these categories. If it does not, the comment is probably not helpful and should be omitted.
+* Always follow the provided JSON structure. Do not add any other keys, and do not include comments (e.g. "//") inside the JSON.
+""")
+
+comment_writer_base_prompt = Template("""Please provide commentary for the following $language sentence:
+From: $author - $work
+Sentence: "$sentence"
+""")
+
 # ------ Prompt instances ------
 # Referenced from config by dotted path, e.g. "sanjaya.llm.prompts.gloss_prompt_no_pos".
 translation_prompt = Prompt(translation_system_prompt, translation_base_prompt)
 translation_prompt_play = Prompt(translation_system_prompt, translation_base_prompt_play)
 gloss_prompt = Prompt(gloss_system_prompt, gloss_base_prompt)
 gloss_prompt_no_pos = Prompt(gloss_system_prompt_no_pos, gloss_base_prompt)
+comment_classifier_prompt = Prompt(comment_classifier_system_prompt, comment_classifier_base_prompt)
+comment_writer_prompt = Prompt(comment_writer_system_prompt, comment_writer_base_prompt)

@@ -223,3 +223,6 @@ output/
 data/
 chunks/
 _pagefind/
+.aider*
+stanza_models/
+experiments/

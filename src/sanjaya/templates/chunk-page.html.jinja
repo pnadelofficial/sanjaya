@@ -33,7 +33,22 @@
       <summary>See notes</summary>
       {% for key, value in sentence[role].items() %}
         {% if key != 'summary' %}
-        <p>{{ value }}</p>
+          {% if value is iterable and value is not string and value is not mapping %}
+          <p>{{ key | title }}:</p>
+          <ul>
+            {% for item in value %}
+            <li>
+              {% if item is mapping %}
+                {% for item_key, item_value in item.items() %}{{ item_key | title }}: {{ item_value }}{% if not loop.last %} — {% endif %}{% endfor %}
+              {% else %}
+                {{ item }}
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p>{{ value }}</p>
+          {% endif %}
         {% endif %}
       {% endfor %}
     </details>

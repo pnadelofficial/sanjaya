@@ -335,6 +335,19 @@ class Generator:
                                 value=summary,
                                 confidence=ann.get("confidence"),
                             )
+                            # Persist every other returned field (e.g.
+                            # CommentAnnotator's per-comment tagging) as
+                            # queryable features, mirroring word_annotation_features.
+                            features = {
+                                k: v
+                                for k, v in ann.items()
+                                if k not in ("summary", "confidence") and v != summary
+                            }
+                            db.write_sentence_annotation_features(
+                                sentence_id=sentence_id,
+                                annotator=role,
+                                features=features,
+                            )
 
                     db.commit()
                     progress.log(f"[{chunk_id}] db: wrote {len(chunk_sentences)} sentences")
@@ -404,18 +417,19 @@ class Generator:
         out_path.write_text(html)
         print(f"Wrote vocab index to {out_path}")
 
-    def generate_site(self, write_db: bool = True) -> None:
+    def generate_site(self, write_db: bool = True, write_html: bool = True) -> None:
         annotation_dir = self.output_dir / "annotations"
         html_dir = self.output_dir / "html"
         annotes = self._create_annotations(annotation_dir=annotation_dir)
         sentences = self._create_sentences(annotes)
-        self.write_html(sentences, html_dir=html_dir)
-        self.write_index(html_dir)
-        self.write_search(html_dir)
-        vocab = self._collect_vocab(sentences)
-        vocab_dir = html_dir / "vocab"
-        self.write_vocab(vocab, vocab_dir)
-        self.write_vocab_index(vocab, vocab_dir)
+        if write_html:
+            self.write_html(sentences, html_dir=html_dir)
+            self.write_index(html_dir)
+            self.write_search(html_dir)
+            vocab = self._collect_vocab(sentences)
+            vocab_dir = html_dir / "vocab"
+            self.write_vocab(vocab, vocab_dir)
+            self.write_vocab_index(vocab, vocab_dir)
         if write_db:
             db_path = html_dir / "data" / "annotations.db"
             db_path.parent.mkdir(parents=True, exist_ok=True)

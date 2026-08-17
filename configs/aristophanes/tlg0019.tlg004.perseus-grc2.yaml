@@ -1,0 +1,37 @@
+# sanjaya configuration
+
+work:
+  title: Σφῆκες
+  author: Aristophanes
+
+source:
+  file: /cluster/tufts/perseuslab/pnadel01/reading-envs/data/tlg0019/tlg004/tlg0019.tlg004.perseus-grc2.xml
+  xpath: .//tei:l
+
+output:
+  dir: "/cluster/tufts/perseuslab/pnadel01/reading-envs/sanjaya/output/Aristophanes/Σφῆκες"
+
+annotators:
+  - class: sanjaya.llm.nlp_pipeline_annotators.NLPGlossAnnotator
+    args:
+        base_url: "http://localhost:8080"
+        language: Ancient Greek
+        author: Aristophanes
+        work: Σφῆκες
+        prompt: sanjaya.llm.prompts.gloss_prompt_no_pos
+
+  - class: sanjaya.llm.annotators.TranslationAnnotator
+    args:
+        base_url: "http://localhost:8080"
+        language: Ancient Greek
+        author: Aristophanes
+        work: Σφῆκες
+
+  - class: sanjaya.llm.annotators.CommentAnnotator
+    args:
+        base_url: "http://localhost:8080"
+        language: Ancient Greek
+        author: Aristophanes
+        work: Σφῆκες
+        classifier_prompt: sanjaya.llm.prompts.comment_classifier_prompt
+        writer_prompt: sanjaya.llm.prompts.comment_writer_prompt

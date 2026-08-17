@@ -226,3 +226,4 @@ _pagefind/
 .aider*
 stanza_models/
 experiments/
+logs-from-cluster/

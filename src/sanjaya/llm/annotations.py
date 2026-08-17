@@ -88,7 +88,11 @@ class WordAnnotator(ABC):
     ) -> List[Annotation]:
         results = []
         for text in texts:
-            token_annotations = self.annotate(text)
+            # A subunit with no text (e.g. a <l> containing only a <gap/>
+            # lacuna marker) has nothing to tokenize or gloss, and some
+            # backends (e.g. NLPGlossAnnotator's stanza pipeline) error out
+            # on an empty/blank string rather than returning zero tokens.
+            token_annotations = self.annotate(text) if text.strip() else []
             valid_tokens = [
                 a for a in token_annotations
                 if validator.validate_output_schema(a.annotation, self.output_schema, "label")
@@ -153,7 +157,10 @@ class SentenceAnnotator(ABC):
         results = []
         speakers = speakers or [None] * len(texts)
         for text, speaker in zip(texts, speakers):
-            ann = self.annotate(text, speaker)
+            # See the matching comment in WordAnnotator.annotate_and_save():
+            # a blank subunit has nothing to summarize and some backends
+            # error out on empty input rather than declining gracefully.
+            ann = self.annotate(text, speaker) if text.strip() else None
             if ann is not None and not validator.validate_output_schema(
                 ann.annotation, self.output_schema, "summary"
             ):

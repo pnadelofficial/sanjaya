@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from string import Template
 from typing import Any, Dict, List
 
@@ -12,9 +12,17 @@ class Prompt:
     kwargs; each only needs to declare the placeholders it actually uses.
     Interchangeable across annotators — referenced from config by dotted path
     the same way annotator classes are (e.g. "sanjaya.llm.prompts.gloss_prompt").
+
+    required_keys declares which top-level JSON keys the model's response
+    must contain, matching what the template's own "Output format" section
+    asks for in prose. This is the one place that contract is written down
+    as data rather than only as text inside the prompt — annotators read
+    it (via call_model_with_retry) to decide whether a response needs to be
+    retried, instead of each annotator hardcoding the same key names again.
     """
     system_template: Template
     task_template: Template
+    required_keys: List[str] = field(default_factory=list)
 
     def create_messages(self, **kwargs: Any) -> List[Dict[str, str]]:
         system_prompt = self.system_template.substitute(**kwargs).strip()
@@ -179,9 +187,17 @@ Sentence: "$sentence"
 
 # ------ Prompt instances ------
 # Referenced from config by dotted path, e.g. "sanjaya.llm.prompts.gloss_prompt_no_pos".
-translation_prompt = Prompt(translation_system_prompt, translation_base_prompt)
-translation_prompt_play = Prompt(translation_system_prompt, translation_base_prompt_play)
-gloss_prompt = Prompt(gloss_system_prompt, gloss_base_prompt)
-gloss_prompt_no_pos = Prompt(gloss_system_prompt_no_pos, gloss_base_prompt)
-comment_classifier_prompt = Prompt(comment_classifier_system_prompt, comment_classifier_base_prompt)
-comment_writer_prompt = Prompt(comment_writer_system_prompt, comment_writer_base_prompt)
+translation_prompt = Prompt(translation_system_prompt, translation_base_prompt, required_keys=["translation"])
+translation_prompt_play = Prompt(translation_system_prompt, translation_base_prompt_play, required_keys=["translation"])
+# Only "gloss" is required, even though the with-POS system prompt also asks
+# for lemma/part_of_speech/morphology — those are optional/decorative today
+# (silently dropped downstream if absent), so retrying over their absence
+# would fire on cases that were never actually treated as failures before.
+gloss_prompt = Prompt(gloss_system_prompt, gloss_base_prompt, required_keys=["gloss"])
+gloss_prompt_no_pos = Prompt(gloss_system_prompt_no_pos, gloss_base_prompt, required_keys=["gloss"])
+comment_classifier_prompt = Prompt(
+    comment_classifier_system_prompt, comment_classifier_base_prompt, required_keys=["needs_comment"]
+)
+comment_writer_prompt = Prompt(
+    comment_writer_system_prompt, comment_writer_base_prompt, required_keys=["comment", "comment_type"]
+)

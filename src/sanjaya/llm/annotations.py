@@ -2,7 +2,7 @@ import requests
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
-from typing import Callable, ClassVar, List, Optional, Dict, Any, Union
+from typing import Callable, ClassVar, List, Optional, Dict, Any, Sequence, Union
 
 from . import validator
 
@@ -34,6 +34,56 @@ def call_model(
     payload = {"model": model, "messages": messages, **kwargs}
     response = requests.post(url, headers=headers, data=json.dumps(payload))
     return response.json()
+
+
+def call_model_with_retry(
+    base_url: str,
+    messages: List[Dict[str, str]],
+    required_keys: Sequence[str],
+    model: str = "default",
+    api_key: Optional[str] = None,
+    max_retries: int = 5,
+    extract: Optional[Callable[[str], Optional[str]]] = None,
+) -> Optional[Union[dict, list]]:
+    """
+    Call the model and validate that its JSON response contains every key
+    in required_keys, retrying (blind resubmission of the same messages —
+    no corrective feedback yet) up to max_retries times on malformed JSON
+    or a response missing one of required_keys.
+
+    required_keys is checked against the model's own raw response, before
+    any merging with other data sources (e.g. NLPGlossAnnotator merging in
+    nlp_pipeline's linguistic features) — a caller should perform that
+    merge only after this returns successfully.
+
+    extract: given the raw response content, return the JSON substring to
+    parse (or None if none found). Defaults to
+    validator.extract_json_from_annotation's default (single JSON object)
+    behavior; pass a custom callable for array responses or other
+    extraction strategies (e.g. CommentAnnotator's array-with-bare-object
+    fallback).
+
+    Returns the parsed dict/list on success, or None if every attempt
+    failed.
+    """
+    extract = extract or validator.extract_json_from_annotation
+    last_raw = None
+    for attempt in range(1, max_retries + 1):
+        response = call_model(base_url, messages, model=model, api_key=api_key)
+        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        raw = extract(content)
+        last_raw = raw
+        parsed = validator.validate_annotation(raw)
+        if not parsed:
+            print(f"[attempt {attempt}/{max_retries}] invalid JSON response: {raw!r}")
+            continue
+        missing = validator.find_missing_keys(parsed, required_keys)
+        if missing:
+            print(f"[attempt {attempt}/{max_retries}] response missing key(s) {missing}: {parsed!r}")
+            continue
+        return parsed
+    print(f"call_model_with_retry: all {max_retries} attempts failed; last raw response: {last_raw!r}")
+    return None
 
 
 class WordAnnotator(ABC):

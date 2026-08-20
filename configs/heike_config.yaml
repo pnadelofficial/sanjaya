@@ -1,0 +1,41 @@
+# sanjaya configuration
+# Run with: sanjaya --config config.yaml
+
+work:
+  title: "Heike Monogatari"
+  author: "Anonymous"
+
+source:
+  file: "../data/heike_monogatari_sample.tei.xml"    # scoped sample: Book 0, first 3 lines only (see experiments/heike_sample_gen.py). Swap to heike_monogatari.tei.xml for the full text.
+  xpath: ".//tei:l"
+
+output:
+  dir: "../output/heike_author"       # relative to this file
+
+# templates:
+#   dir: "src/sanjaya/templates" # optional: defaults to the bundled templates
+
+annotators:
+  - class: sanjaya.llm.nlp_pipeline_annotators.NLPGlossAnnotator
+    args:
+      base_url: "http://127.0.0.1:8080"
+      language: "Japanese"
+      author: "Anonymous"
+      work: "Heike Monogatari"
+      prompt: sanjaya.llm.prompts.gloss_prompt_no_pos
+
+  - class: sanjaya.llm.annotators.TranslationAnnotator
+    args:
+      base_url: "http://127.0.0.1:8080"
+      language: "Japanese"
+      author: "Anonymous"
+      work: "Heike Monogatari"
+
+  - class: sanjaya.llm.annotators.CommentAnnotator
+    args:
+      base_url: "http://127.0.0.1:8080"
+      language: "Japanese"
+      author: "Anonymous"
+      work: "Heike Monogatari"
+      classifier_prompt: sanjaya.llm.prompts.comment_classifier_prompt
+      writer_prompt: sanjaya.llm.prompts.comment_writer_prompt

@@ -1,3 +1,5 @@
+from typing import Sequence
+
 import json_repair
 import json
 import jsonschema
@@ -81,6 +83,32 @@ def validate_annotation(annotation, json_schema=None):
     except Exception as e:
         print(f"Annotation validation error: {e}")
         return False
+
+
+def find_missing_keys(parsed, required_keys: Sequence[str]) -> list[str]:
+    """
+    Return which of required_keys are absent from a parsed model response,
+    for use by call_model_with_retry() to decide whether a response needs
+    to be retried.
+
+    parsed may be a single object (checked directly) or a list of objects
+    (e.g. CommentAnnotator's array response) — for a list, a key counts as
+    missing if any item in the list lacks it. Returns required_keys
+    unchanged if parsed is neither a dict nor a list of dicts (including an
+    empty list, which has nothing to check against and so satisfies nothing).
+    """
+    if isinstance(parsed, dict):
+        records = [parsed]
+    elif isinstance(parsed, list) and parsed and all(isinstance(item, dict) for item in parsed):
+        records = parsed
+    else:
+        return list(required_keys)
+
+    missing = []
+    for key in required_keys:
+        if any(key not in record for record in records):
+            missing.append(key)
+    return missing
 
 
 def validate_output_schema(

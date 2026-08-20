@@ -1,4 +1,4 @@
-from .annotations import WordAnnotator, SentenceAnnotator, Annotation, call_model
+from .annotations import WordAnnotator, SentenceAnnotator, Annotation, call_model_with_retry
 from . import validator
 from sanjaya.utils import load_object
 
@@ -30,6 +30,11 @@ class CommentAnnotator(SentenceAnnotator):
     output_schema declares "comments" as a list, so a malformed (missing or
     wrongly-shaped) comments field is caught by validate_output_schema()
     before the annotation reaches the cache or the DB.
+
+    Both model calls go through call_model_with_retry(), which retries
+    (blind resubmission, up to max_retries times) on malformed JSON or a
+    response missing a key declared on the relevant prompt's
+    required_keys — see classifier_prompt/writer_prompt in prompts.py.
     """
     role = "comment"
     output_schema = {"comments": list}
@@ -44,6 +49,7 @@ class CommentAnnotator(SentenceAnnotator):
         api_key: Optional[str] = None,
         classifier_prompt: str = "sanjaya.llm.prompts.comment_classifier_prompt",
         writer_prompt: str = "sanjaya.llm.prompts.comment_writer_prompt",
+        max_retries: int = 5,
     ):
         self.base_url = base_url
         self.language = language
@@ -53,6 +59,19 @@ class CommentAnnotator(SentenceAnnotator):
         self.api_key = api_key
         self.classifier_prompt = load_object(classifier_prompt)
         self.writer_prompt = load_object(writer_prompt)
+        self.max_retries = max_retries
+
+    @staticmethod
+    def _extract_writer_json(content: str) -> Optional[str]:
+        raw = validator.extract_json_from_annotation(content, regex_pattern=r"\[.*\]")
+        if raw is not None:
+            return raw
+        # Some models ignore the array-wrapping instruction and return a
+        # bare object; treat that as a single comment rather than
+        # conflating a malformed response with a legitimate "no comment
+        # needed" reply (both would otherwise extract to None).
+        bare = validator.extract_json_from_annotation(content, regex_pattern=r"\{.*\}")
+        return f"[{bare}]" if bare is not None else None
 
     def _needs_comment(self, sentence: str) -> bool:
         messages = self.classifier_prompt.create_messages(
@@ -61,12 +80,12 @@ class CommentAnnotator(SentenceAnnotator):
             work=self.work,
             sentence=sentence,
         )
-        response = call_model(self.base_url, messages, model=self.model, api_key=self.api_key)
-        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
-        raw = validator.extract_json_from_annotation(content, regex_pattern=r"\{.*\}")
-        parsed = validator.validate_annotation(raw)
+        parsed = call_model_with_retry(
+            self.base_url, messages, self.classifier_prompt.required_keys,
+            model=self.model, api_key=self.api_key, max_retries=self.max_retries,
+        )
         if not isinstance(parsed, dict):
-            print(f"Invalid classifier annotation for text: {sentence}\nAnnotation: {raw}")
+            print(f"Invalid classifier annotation for text: {sentence}")
             return False
         value = parsed.get("needs_comment")
         if isinstance(value, bool):
@@ -85,20 +104,13 @@ class CommentAnnotator(SentenceAnnotator):
             work=self.work,
             sentence=sentence,
         )
-        response = call_model(self.base_url, messages, model=self.model, api_key=self.api_key)
-        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
-        raw = validator.extract_json_from_annotation(content, regex_pattern=r"\[.*\]")
-        if raw is None:
-            # Some models ignore the array-wrapping instruction and return a
-            # bare object; treat that as a single comment rather than
-            # conflating a malformed response with a legitimate "no comment
-            # needed" reply (both would otherwise extract to None).
-            bare = validator.extract_json_from_annotation(content, regex_pattern=r"\{.*\}")
-            if bare is not None:
-                raw = f"[{bare}]"
-        parsed = validator.validate_annotation(raw)
+        parsed = call_model_with_retry(
+            self.base_url, messages, self.writer_prompt.required_keys,
+            model=self.model, api_key=self.api_key, max_retries=self.max_retries,
+            extract=self._extract_writer_json,
+        )
         if not parsed:
-            print(f"Invalid annotation for text: {sentence}\nAnnotation: {raw}")
+            print(f"Invalid annotation for text: {sentence}")
             return None
         if not isinstance(parsed, list):
             parsed = [parsed]
@@ -130,6 +142,10 @@ class GlossAnnotator(WordAnnotator):
 
     Uses NLTK word_tokenize by default; override tokenize() for different
     language-specific tokenisation.
+
+    The model call goes through call_model_with_retry(), which retries
+    (blind resubmission, up to max_retries times) on malformed JSON or a
+    response missing a key declared on prompt.required_keys.
     """
     role = "gloss"
     output_schema = None
@@ -143,6 +159,7 @@ class GlossAnnotator(WordAnnotator):
         model: str = "default",
         api_key: Optional[str] = None,
         prompt: str = "sanjaya.llm.prompts.gloss_prompt",
+        max_retries: int = 5,
     ):
         self.base_url = base_url
         self.language = language
@@ -151,6 +168,7 @@ class GlossAnnotator(WordAnnotator):
         self.model = model
         self.api_key = api_key
         self.prompt = load_object(prompt)
+        self.max_retries = max_retries
 
     def annotate(self, sentence: str) -> List[Annotation]:
         tokens = self.tokenize(sentence)
@@ -164,13 +182,12 @@ class GlossAnnotator(WordAnnotator):
                 language_id=i,
                 language_word=token,
             )
-            response = call_model(self.base_url, messages, model=self.model, api_key=self.api_key)
-            raw = validator.extract_json_from_annotation(
-                response.get("choices", [{}])[0].get("message", {}).get("content", "")
+            annotation = call_model_with_retry(
+                self.base_url, messages, self.prompt.required_keys,
+                model=self.model, api_key=self.api_key, max_retries=self.max_retries,
             )
-            annotation = validator.validate_annotation(raw)
             if not annotation:
-                print(f"Invalid annotation for token: {token}\nAnnotation: {raw}")
+                print(f"Invalid annotation for token: {token}")
                 continue
             annotation["label"] = annotation.get("gloss", "")
             annotations.append(Annotation(text=token, annotation=annotation))
@@ -194,6 +211,10 @@ class TranslationAnnotator(SentenceAnnotator):
 
     output_schema = None: the sentence annotation is a plain translation string.
     No additional metadata fields are declared or validated beyond "summary".
+
+    The model call goes through call_model_with_retry(), which retries
+    (blind resubmission, up to max_retries times) on malformed JSON or a
+    response missing a key declared on whichever prompt's required_keys.
     """
     role = "translation"
     output_schema = None
@@ -208,6 +229,7 @@ class TranslationAnnotator(SentenceAnnotator):
         api_key: Optional[str] = None,
         prompt: str = "sanjaya.llm.prompts.translation_prompt",
         play_prompt: str = "sanjaya.llm.prompts.translation_prompt_play",
+        max_retries: int = 5,
     ):
         self.base_url = base_url
         self.language = language
@@ -217,10 +239,12 @@ class TranslationAnnotator(SentenceAnnotator):
         self.api_key = api_key
         self.prompt = load_object(prompt)
         self.play_prompt = load_object(play_prompt)
+        self.max_retries = max_retries
 
     def annotate(self, sentence: str, speaker: Optional[str] = None) -> Optional[Annotation]:
+        prompt = self.play_prompt if speaker else self.prompt
         if speaker:
-            messages = self.play_prompt.create_messages(
+            messages = prompt.create_messages(
                 language=self.language,
                 author=self.author,
                 work=self.work,
@@ -228,19 +252,18 @@ class TranslationAnnotator(SentenceAnnotator):
                 speaker=speaker,
             )
         else:
-            messages = self.prompt.create_messages(
+            messages = prompt.create_messages(
                 language=self.language,
                 author=self.author,
                 work=self.work,
                 sentence=sentence,
             )
-        response = call_model(self.base_url, messages, model=self.model, api_key=self.api_key)
-        raw = validator.extract_json_from_annotation(
-            response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        annotation = call_model_with_retry(
+            self.base_url, messages, prompt.required_keys,
+            model=self.model, api_key=self.api_key, max_retries=self.max_retries,
         )
-        annotation = validator.validate_annotation(raw)
         if not annotation:
-            print(f"Invalid annotation for text: {sentence}\nAnnotation: {raw}")
+            print(f"Invalid annotation for text: {sentence}")
             return None
         annotation["summary"] = annotation.get("translation", "")
         return Annotation(text=sentence, annotation=annotation)
